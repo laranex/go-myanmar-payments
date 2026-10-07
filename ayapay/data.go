@@ -1,6 +1,7 @@
 package ayapay
 
 import (
+	myanmarpayments "github.com/laranex/go-myanmar-payments"
 	"github.com/laranex/go-myanmar-payments/internal/validate"
 )
 
@@ -24,8 +25,8 @@ func (m Method) valid() bool { return m == MethodWeb || m == MethodQR || m == Me
 type PaymentData struct {
 	// OrderID is your unique order id (merchOrderId), 6 to 40 characters.
 	OrderID string
-	// Amount is the amount in whole kyat.
-	Amount int64
+	// Amount is the amount in whole kyat, e.g. myanmarpayments.Kyat(1000). AYA documents no decimals.
+	Amount myanmarpayments.Amount
 	// Channel is the channel key from Services, e.g. aya_pay, kbz_pay, visa.
 	Channel string
 	// Method is how the customer pays through that channel.
@@ -43,7 +44,7 @@ func (d PaymentData) Validate() error {
 	return validate.New().
 		Required("orderId", d.OrderID).
 		Length("orderId", d.OrderID, 6, 40).
-		Positive("amount", d.Amount).
+		Amount("amount", d.Amount, validate.AmountRule{Gateway: "AYA Payment Gateway"}).
 		Required("channel", d.Channel).
 		When(!d.Method.valid(), "method", "The method field must be one of WEB, QR or NOTI.").
 		URL("returnUrl", d.ReturnURL).

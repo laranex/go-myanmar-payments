@@ -178,7 +178,7 @@ func (g *Gateway) precreate(ctx context.Context, data PaymentData, tradeType str
 		"merch_code":     g.config.MerchantCode,
 		"merch_order_id": data.OrderID,
 		"trade_type":     tradeType,
-		"total_amount":   data.Amount,
+		"total_amount":   data.Amount.String(),
 		"trans_currency": "MMK",
 	}
 	if data.Title != "" {

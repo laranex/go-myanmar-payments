@@ -51,7 +51,7 @@ func callback(overrides map[string]string) *myanmarpayments.CallbackRequest {
 }
 
 func TestInitiateSignsTheHostedCheckoutFields(t *testing.T) {
-	payment, err := newGateway(t).Initiate(PaymentData{OrderID: "ORDER-1", Amount: "1000", CallbackURL: "https://shop.test/cs/callback", ReturnURL: "https://shop.test/done", TransactionType: Authorization})
+	payment, err := newGateway(t).Initiate(PaymentData{OrderID: "ORDER-1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cs/callback", ReturnURL: "https://shop.test/done", TransactionType: Authorization})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestInitiateSignsTheHostedCheckoutFields(t *testing.T) {
 }
 
 func TestDecimalAmountsAndOtherCurrencies(t *testing.T) {
-	payment, err := newGateway(t).Initiate(PaymentData{OrderID: "ORDER-2", Amount: "10.50", CallbackURL: "https://shop.test/cb", Currency: "USD"})
+	payment, err := newGateway(t).Initiate(PaymentData{OrderID: "ORDER-2", Amount: myanmarpayments.MustParseAmount("10.50"), CallbackURL: "https://shop.test/cb", Currency: "USD"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,15 +114,16 @@ func TestTamperedCallbackIsRejected(t *testing.T) {
 }
 
 func TestValidationFollowsTheSecureAcceptanceFieldRules(t *testing.T) {
-	base := PaymentData{OrderID: "ORDER-1", Amount: "1000", CallbackURL: "https://shop.test/cb"}
+	base := PaymentData{OrderID: "ORDER-1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb"}
 	cases := map[string]struct {
 		mutate func(*PaymentData)
 		field  string
 	}{
 		"http callback":        {func(d *PaymentData) { d.CallbackURL = "http://shop.test/cb" }, "callbackUrl"},
 		"url over 255":         {func(d *PaymentData) { d.ReturnURL = "https://shop.test/" + strings.Repeat("a", 250) }, "returnUrl"},
-		"amount over 15 chars": {func(d *PaymentData) { d.Amount = "1234567890123.45" }, "amount"},
-		"exponent amount":      {func(d *PaymentData) { d.Amount = "1e5" }, "amount"},
+		"amount over 15 chars": {func(d *PaymentData) { d.Amount = myanmarpayments.MustParseAmount("1234567890123.45") }, "amount"},
+		"negative amount":      {func(d *PaymentData) { d.Amount = myanmarpayments.Kyat(-1) }, "amount"},
+		"missing amount":       {func(d *PaymentData) { d.Amount = myanmarpayments.Amount{} }, "amount"},
 		"plain en locale":      {func(d *PaymentData) { d.Locale = "en" }, "locale"},
 		"order id over 50":     {func(d *PaymentData) { d.OrderID = strings.Repeat("A", 51) }, "orderId"},
 		"unknown type":         {func(d *PaymentData) { d.TransactionType = "refund" }, "transactionType"},
@@ -136,5 +137,14 @@ func TestValidationFollowsTheSecureAcceptanceFieldRules(t *testing.T) {
 				t.Fatalf("expected error on %s, got %v", tc.field, err)
 			}
 		})
+	}
+}
+
+func TestCyberSourceAcceptsZeroAndAnyDecimalPlaces(t *testing.T) {
+	for _, amount := range []myanmarpayments.Amount{myanmarpayments.Kyat(0), myanmarpayments.MustParseAmount("10.505")} {
+		data := PaymentData{OrderID: "ORDER-1", Amount: amount, CallbackURL: "https://shop.test/cb"}
+		if err := data.Validate(); err != nil {
+			t.Fatalf("amount %s: unexpected error %v", amount, err)
+		}
 	}
 }

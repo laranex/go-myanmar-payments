@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/url"
+	"strings"
 	"testing"
 
 	myanmarpayments "github.com/laranex/go-myanmar-payments"
@@ -31,7 +32,7 @@ func newGateway(t *testing.T, server *testutil.Server) *Gateway {
 func paymentData() *PaymentData {
 	return &PaymentData{
 		OrderID: "100", CallbackURL: "https://shop.test/wave/callback", ReturnURL: "https://shop.test/done",
-		Description: "Order 100", Items: []Item{{"Shoes", 600}, {"Socks", 400}}, MerchantReferenceID: "ref-001",
+		Description: "Order 100", Items: []Item{{"Shoes", myanmarpayments.Kyat(600)}, {"Socks", myanmarpayments.Kyat(400)}}, MerchantReferenceID: "ref-001",
 	}
 }
 
@@ -114,7 +115,7 @@ func TestAmountDefaultsToItemTotalAndReferenceIsUniquePerAttempt(t *testing.T) {
 		testutil.Reply{Body: map[string]any{"message": "success", "transaction_id": "b"}},
 	)
 	gateway := newGateway(t, server)
-	first := &PaymentData{OrderID: "100", CallbackURL: "https://shop.test/cb", ReturnURL: "https://shop.test/done", Description: "x", Items: []Item{{"A", 250}}}
+	first := &PaymentData{OrderID: "100", CallbackURL: "https://shop.test/cb", ReturnURL: "https://shop.test/done", Description: "x", Items: []Item{{"A", myanmarpayments.Kyat(250)}}}
 	second := *first
 
 	if _, err := gateway.Initiate(context.Background(), first); err != nil {
@@ -123,7 +124,7 @@ func TestAmountDefaultsToItemTotalAndReferenceIsUniquePerAttempt(t *testing.T) {
 	if _, err := gateway.Initiate(context.Background(), &second); err != nil {
 		t.Fatal(err)
 	}
-	if first.ResolvedAmount() != 250 || first.MerchantReferenceID == "" || first.MerchantReferenceID == second.MerchantReferenceID {
+	if first.ResolvedAmount().String() != "250" || first.MerchantReferenceID == "" || first.MerchantReferenceID == second.MerchantReferenceID {
 		t.Fatalf("unexpected references %q %q", first.MerchantReferenceID, second.MerchantReferenceID)
 	}
 }
@@ -182,7 +183,7 @@ func TestCallbackSignedWithAnotherKeyIsRejected(t *testing.T) {
 
 func TestValidationFollowsWaveRules(t *testing.T) {
 	base := func() PaymentData {
-		return PaymentData{OrderID: "100", CallbackURL: "https://shop.test/cb", ReturnURL: "https://shop.test/done", Description: "x", Items: []Item{{"A", 250}}}
+		return PaymentData{OrderID: "100", CallbackURL: "https://shop.test/cb", ReturnURL: "https://shop.test/done", Description: "x", Items: []Item{{"A", myanmarpayments.Kyat(250)}}}
 	}
 	cases := map[string]struct {
 		mutate func(*PaymentData)
@@ -191,8 +192,11 @@ func TestValidationFollowsWaveRules(t *testing.T) {
 		"no items":           {func(d *PaymentData) { d.Items = nil }, "items"},
 		"http callback":      {func(d *PaymentData) { d.CallbackURL = "http://shop.test/cb" }, "callbackUrl"},
 		"non standard port":  {func(d *PaymentData) { d.CallbackURL = "https://shop.test:8443/cb" }, "callbackUrl"},
-		"zero item amount":   {func(d *PaymentData) { d.Items = []Item{{"A", 0}} }, "items.0.amount"},
+		"zero item amount":   {func(d *PaymentData) { d.Items = []Item{{"A", myanmarpayments.Kyat(0)}} }, "items.0.amount"},
 		"missing return url": {func(d *PaymentData) { d.ReturnURL = "" }, "returnUrl"},
+		"decimal item":       {func(d *PaymentData) { d.Items = []Item{{"A", myanmarpayments.MustParseAmount("250.50")}} }, "items.0.amount"},
+		"negative item":      {func(d *PaymentData) { d.Items = []Item{{"A", myanmarpayments.Kyat(-1)}} }, "items.0.amount"},
+		"decimal total":      {func(d *PaymentData) { d.Amount = myanmarpayments.MustParseAmount("250.50") }, "amount"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -213,5 +217,29 @@ func TestDocumentedHosts(t *testing.T) {
 	}
 	if production.ResolvedBaseURL() != ProductionURL || production.ResolvedAuthenticateURL() != ProductionAuthenticateURL {
 		t.Fatal("unexpected production hosts")
+	}
+}
+
+func TestDecimalAmountsNameWave(t *testing.T) {
+	data := PaymentData{OrderID: "100", CallbackURL: "https://shop.test/cb", ReturnURL: "https://shop.test/done", Description: "x",
+		Items: []Item{{"A", myanmarpayments.Kyat(250)}}, Amount: myanmarpayments.MustParseAmount("250.50")}
+	var invalid *myanmarpayments.InvalidPaymentDataError
+	if err := data.Validate(); !errors.As(err, &invalid) || !strings.Contains(invalid.Errors["amount"], "Wave Money does not accept decimal amounts") {
+		t.Fatalf("unexpected error %v", err)
+	}
+}
+
+func TestItemTotalIsExactBeyondInt64(t *testing.T) {
+	data := PaymentData{Items: []Item{
+		{"A", myanmarpayments.Kyat(9223372036854775807)},
+		{"B", myanmarpayments.Kyat(1)},
+	}}
+	if got := data.ResolvedAmount().String(); got != "9223372036854775808" {
+		t.Fatalf("ResolvedAmount = %s", got)
+	}
+
+	data.Items = append(data.Items, Item{"C", myanmarpayments.MustParseAmount("1.5")})
+	if data.ResolvedAmount().IsSet() {
+		t.Fatal("a decimal item must leave the total unset")
 	}
 }

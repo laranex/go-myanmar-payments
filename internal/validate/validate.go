@@ -56,14 +56,6 @@ func (v *Validator) Pattern(field, value string, pattern *regexp.Regexp, descrip
 	return v
 }
 
-// Positive fails when value is not greater than zero.
-func (v *Validator) Positive(field string, value int64) *Validator {
-	if value <= 0 {
-		v.fail(field, fmt.Sprintf("The %s field must be greater than 0.", field))
-	}
-	return v
-}
-
 // Between fails when value is set (non-zero) and outside [min, max].
 func (v *Validator) Between(field string, value, min, max int) *Validator {
 	if value != 0 && (value < min || value > max) {
@@ -72,27 +64,35 @@ func (v *Validator) Between(field string, value, min, max int) *Validator {
 	return v
 }
 
-// Decimal validates a non-negative decimal string with at most maxDecimals places.
-// maxLength of 0 means unlimited.
-func (v *Validator) Decimal(field, value string, maxDecimals, maxLength int, allowZero bool) *Validator {
-	pattern := `^\d+$`
-	if maxDecimals > 0 {
-		pattern = fmt.Sprintf(`^\d+(\.\d{1,%d})?$`, maxDecimals)
-	}
-	if !regexp.MustCompile(pattern).MatchString(value) {
-		if maxDecimals > 0 {
-			v.fail(field, fmt.Sprintf("The %s field must be a number with at most %d decimal places.", field, maxDecimals))
-		} else {
-			v.fail(field, fmt.Sprintf("The %s field must be a whole number.", field))
-		}
-		return v
-	}
-	if !allowZero && strings.Trim(strings.ReplaceAll(value, ".", ""), "0") == "" {
+// AmountRule describes what a gateway's documentation allows for an amount.
+type AmountRule struct {
+	// Gateway is the gateway's display name, used in error messages.
+	Gateway string
+	// MaxDecimals is the most fractional digits allowed; 0 means whole amounts only and -1 means no limit.
+	MaxDecimals int
+	// MaxLength limits the amount's text length; 0 means no limit.
+	MaxLength int
+	// AllowZero accepts an amount of 0.
+	AllowZero bool
+}
+
+// Amount checks an amount against a gateway's documented rules.
+func (v *Validator) Amount(field string, amount myanmarpayments.Amount, rule AmountRule) *Validator {
+	switch {
+	case !amount.IsSet():
+		v.fail(field, fmt.Sprintf("The %s field is required.", field))
+	case !amount.Valid():
+		v.fail(field, fmt.Sprintf("The %s field must be a non-negative number such as 1000 or 1000.50.", field))
+	case rule.MaxDecimals == 0 && amount.DecimalPlaces() > 0:
+		v.fail(field, fmt.Sprintf("%s does not accept decimal amounts; the %s field must be a whole number.", rule.Gateway, field))
+	case rule.MaxDecimals > 0 && amount.DecimalPlaces() > rule.MaxDecimals:
+		v.fail(field, fmt.Sprintf("%s accepts at most %d decimal places; the %s field has %d.", rule.Gateway, rule.MaxDecimals, field, amount.DecimalPlaces()))
+	case !rule.AllowZero && amount.IsZero():
 		v.fail(field, fmt.Sprintf("The %s field must be greater than 0.", field))
+	case rule.MaxLength > 0 && len(amount.String()) > rule.MaxLength:
+		v.fail(field, fmt.Sprintf("The %s field must not be greater than %d characters.", field, rule.MaxLength))
 	}
-	if maxLength > 0 && len(value) > maxLength {
-		v.fail(field, fmt.Sprintf("The %s field must not be greater than %d characters.", field, maxLength))
-	}
+
 	return v
 }
 

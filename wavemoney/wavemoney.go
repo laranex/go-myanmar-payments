@@ -63,7 +63,17 @@ func (g *Gateway) Initiate(ctx context.Context, data *PaymentData) (*myanmarpaym
 
 	amount := data.ResolvedAmount()
 	ttl := g.config.ResolvedTimeToLive()
-	items, err := json.Marshal(data.Items)
+	// Wave documents items as [{"name": "...", "amount": 1000}] with a numeric amount; the amount
+	// text is emitted as a JSON number without passing through a float.
+	type waveItem struct {
+		Name   string      `json:"name"`
+		Amount json.Number `json:"amount"`
+	}
+	wireItems := make([]waveItem, len(data.Items))
+	for i, item := range data.Items {
+		wireItems[i] = waveItem{Name: item.Name, Amount: json.Number(item.Amount.String())}
+	}
+	items, err := json.Marshal(wireItems)
 	if err != nil {
 		return nil, fmt.Errorf("myanmarpayments: encode items: %w", err)
 	}
@@ -75,11 +85,11 @@ func (g *Gateway) Initiate(ctx context.Context, data *PaymentData) (*myanmarpaym
 	form.Set("merchant_reference_id", data.MerchantReferenceID)
 	form.Set("frontend_result_url", data.ReturnURL)
 	form.Set("backend_result_url", data.CallbackURL)
-	form.Set("amount", strconv.FormatInt(amount, 10))
+	form.Set("amount", amount.String())
 	form.Set("payment_description", data.Description)
 	form.Set("merchant_name", g.config.MerchantName)
 	form.Set("items", string(items))
-	form.Set("hash", g.hash([]string{strconv.Itoa(ttl), g.config.MerchantID, data.OrderID, strconv.FormatInt(amount, 10), data.CallbackURL, data.MerchantReferenceID}))
+	form.Set("hash", g.hash([]string{strconv.Itoa(ttl), g.config.MerchantID, data.OrderID, amount.String(), data.CallbackURL, data.MerchantReferenceID}))
 
 	response, err := g.transport.PostForm(ctx, g.config.ResolvedBaseURL()+"/payment", form, nil)
 	if err != nil {

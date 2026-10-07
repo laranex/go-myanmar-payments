@@ -69,7 +69,7 @@ func callbackRequest(t *testing.T, body map[string]any) *myanmarpayments.Callbac
 
 func TestInitiateSignsTheFormInTheDocumentedOrder(t *testing.T) {
 	gateway := newGateway(t, nil)
-	payment, err := gateway.Initiate(PaymentData{OrderID: "ORD123456", Amount: 1000, Channel: "kbz_pay", Method: MethodQR, ReturnURL: "https://shop.test/done", Description: "Order", UserRefs: []string{"cart-9"}})
+	payment, err := gateway.Initiate(PaymentData{OrderID: "ORD123456", Amount: myanmarpayments.Kyat(1000), Channel: "kbz_pay", Method: MethodQR, ReturnURL: "https://shop.test/done", Description: "Order", UserRefs: []string{"cart-9"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,11 +219,12 @@ func TestValidationFollowsAYARules(t *testing.T) {
 		data  PaymentData
 		field string
 	}{
-		"short order id":  {PaymentData{OrderID: "A1", Amount: 1000, Channel: "aya_pay", Method: MethodQR}, "orderId"},
-		"six user refs":   {PaymentData{OrderID: "ORD123456", Amount: 1000, Channel: "aya_pay", Method: MethodQR, UserRefs: []string{"1", "2", "3", "4", "5", "6"}}, "userRefs"},
-		"unknown method":  {PaymentData{OrderID: "ORD123456", Amount: 1000, Channel: "aya_pay", Method: "SMS"}, "method"},
-		"missing channel": {PaymentData{OrderID: "ORD123456", Amount: 1000, Method: MethodQR}, "channel"},
+		"short order id":  {PaymentData{OrderID: "A1", Amount: myanmarpayments.Kyat(1000), Channel: "aya_pay", Method: MethodQR}, "orderId"},
+		"six user refs":   {PaymentData{OrderID: "ORD123456", Amount: myanmarpayments.Kyat(1000), Channel: "aya_pay", Method: MethodQR, UserRefs: []string{"1", "2", "3", "4", "5", "6"}}, "userRefs"},
+		"unknown method":  {PaymentData{OrderID: "ORD123456", Amount: myanmarpayments.Kyat(1000), Channel: "aya_pay", Method: "SMS"}, "method"},
+		"missing channel": {PaymentData{OrderID: "ORD123456", Amount: myanmarpayments.Kyat(1000), Method: MethodQR}, "channel"},
 		"zero amount":     {PaymentData{OrderID: "ORD123456", Channel: "aya_pay", Method: MethodQR}, "amount"},
+		"decimal amount":  {PaymentData{OrderID: "ORD123456", Amount: myanmarpayments.MustParseAmount("1000.50"), Channel: "aya_pay", Method: MethodQR}, "amount"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

@@ -21,7 +21,7 @@ import (
 kbz, err := kbzpay.New(kbzpay.ConfigFromEnv(os.Getenv), nil)
 
 // Start a payment: a typed result per flow
-payment, err := kbz.PWA(ctx, kbzpay.PaymentData{OrderID: "ORDER_1", Amount: "1000", CallbackURL: "https://shop.test/kbz/callback"})
+payment, err := kbz.PWA(ctx, kbzpay.PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/kbz/callback"})
 http.Redirect(w, r, payment.URL, http.StatusFound)
 
 // Handle the callback: verified, with a gateway-independent status
@@ -42,6 +42,28 @@ callback.Acknowledgement.Write(w) // KBZ Pay expects a plain "success"
 | `cybersource` | `Initiate` (form) | callback only |
 
 Every gateway verifies callbacks with `HandleCallback` and returns a `*myanmarpayments.PaymentCallback`.
+
+## Amounts
+
+Amounts are `myanmarpayments.Amount` values, kept as exact decimal text and never rounded through a float:
+
+```go
+myanmarpayments.Kyat(1000)                   // whole amount
+myanmarpayments.MustParseAmount("1000.50")   // decimal, panics on bad input (constants, tests)
+amount, err := myanmarpayments.ParseAmount(s) // decimal from user input
+```
+
+Each gateway's `Validate` applies its documented rules:
+
+| Gateway | Decimals | Other rules |
+|---|---|---|
+| KBZ Pay | up to 2 places | greater than 0, MMK only |
+| Wave Money | no | greater than 0, MMK only; the total defaults to the sum of the items |
+| AYA Payment Gateway | no | greater than 0, MMK only |
+| Yoma MMQR | no | greater than 0 |
+| CyberSource | yes | 0 or more, at most 15 characters, any ISO 4217 currency |
+
+A negative `Kyat(n)` does not panic: it fails validation like any other bad field. In JSON an `Amount` is written as a string (`"1000.50"`) and read from a string or a plain number, using the number's literal text.
 
 ## License
 

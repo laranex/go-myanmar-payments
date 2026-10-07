@@ -35,7 +35,7 @@ func precreate(extra map[string]any) testutil.Reply {
 	return testutil.Reply{Body: map[string]any{"Response": response}}
 }
 
-var data = PaymentData{OrderID: "ORDER_1", Amount: "1000", CallbackURL: "https://shop.test/kbz/callback"}
+var data = PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/kbz/callback"}
 
 func TestSignStringMatchesTheKBZDocsExample(t *testing.T) {
 	vector := testutil.Fixture(t, "kbz_pay/sign_string.json")
@@ -134,7 +134,7 @@ func TestAppReturnsSignedOrderInfo(t *testing.T) {
 func TestOptionalFieldsGoInBizContentAndDecimalsAreKept(t *testing.T) {
 	server := testutil.NewServer(t, precreate(nil))
 
-	_, err := newGateway(t, server).PWA(context.Background(), PaymentData{OrderID: "ORDER_1", Amount: "1000.50", CallbackURL: "https://shop.test/cb", Title: "Shoes", TimeoutMinutes: 30, CallbackInfo: "cart=9"})
+	_, err := newGateway(t, server).PWA(context.Background(), PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.MustParseAmount("1000.50"), CallbackURL: "https://shop.test/cb", Title: "Shoes", TimeoutMinutes: 30, CallbackInfo: "cart=9"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,13 +229,13 @@ func TestValidationFollowsKBZLimits(t *testing.T) {
 		data  PaymentData
 		field string
 	}{
-		"order id with dashes":    {PaymentData{OrderID: "ORDER-1", Amount: "1000", CallbackURL: "https://shop.test/cb"}, "orderId"},
-		"order id too long":       {PaymentData{OrderID: strings.Repeat("a", 41), Amount: "1000", CallbackURL: "https://shop.test/cb"}, "orderId"},
-		"zero amount":             {PaymentData{OrderID: "ORDER_1", Amount: "0", CallbackURL: "https://shop.test/cb"}, "amount"},
-		"three decimals":          {PaymentData{OrderID: "ORDER_1", Amount: "1000.505", CallbackURL: "https://shop.test/cb"}, "amount"},
-		"negative":                {PaymentData{OrderID: "ORDER_1", Amount: "-5", CallbackURL: "https://shop.test/cb"}, "amount"},
-		"callback url with query": {PaymentData{OrderID: "ORDER_1", Amount: "1000", CallbackURL: "https://shop.test/cb?x=1"}, "callbackUrl"},
-		"timeout above 120":       {PaymentData{OrderID: "ORDER_1", Amount: "1000", CallbackURL: "https://shop.test/cb", TimeoutMinutes: 121}, "timeoutMinutes"},
+		"order id with dashes":    {PaymentData{OrderID: "ORDER-1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb"}, "orderId"},
+		"order id too long":       {PaymentData{OrderID: strings.Repeat("a", 41), Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb"}, "orderId"},
+		"zero amount":             {PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(0), CallbackURL: "https://shop.test/cb"}, "amount"},
+		"three decimals":          {PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.MustParseAmount("1000.505"), CallbackURL: "https://shop.test/cb"}, "amount"},
+		"negative":                {PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(-5), CallbackURL: "https://shop.test/cb"}, "amount"},
+		"callback url with query": {PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb?x=1"}, "callbackUrl"},
+		"timeout above 120":       {PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb", TimeoutMinutes: 121}, "timeoutMinutes"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -260,5 +260,13 @@ func TestConfigNamesAMissingKeyAndNormalisesThePWAURL(t *testing.T) {
 	}
 	if (Config{Production: true}).ResolvedAPIURL() != ProductionAPIURL {
 		t.Fatal("production URL not selected")
+	}
+}
+
+func TestKBZAmountErrorsNameTheGateway(t *testing.T) {
+	var invalid *myanmarpayments.InvalidPaymentDataError
+	err := PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.MustParseAmount("1000.505"), CallbackURL: "https://shop.test/cb"}.Validate()
+	if !errors.As(err, &invalid) || !strings.Contains(invalid.Errors["amount"], "KBZ Pay accepts at most 2 decimal places") {
+		t.Fatalf("unexpected error %v", err)
 	}
 }

@@ -53,7 +53,7 @@ func TestInitiateChecksOutGeneratesTheQRAndReturnsItsExpiry(t *testing.T) {
 		testutil.Reply{Body: map[string]any{"refLabel": "100000083331", "qrString": "iVBORw0KGgo=", "errorCode": nil}},
 	)
 
-	qr, err := newGateway(t, server, nil).Initiate(context.Background(), PaymentData{OrderID: "ORD-2026-001", Amount: 1000, Description: "Order 1"})
+	qr, err := newGateway(t, server, nil).Initiate(context.Background(), PaymentData{OrderID: "ORD-2026-001", Amount: myanmarpayments.Kyat(1000), Description: "Order 1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestTokenIsRefreshedOnceOn401(t *testing.T) {
 func TestBusinessErrorWithHTTP200IsAnAPIError(t *testing.T) {
 	server := testutil.NewServer(t, token("t"), testutil.Reply{Body: map[string]any{"checkOutStatus": false, "errorCode": "PAYMENT ALREADY EXISTS", "errorDescription": "Payment already exists"}})
 
-	_, err := newGateway(t, server, nil).Initiate(context.Background(), PaymentData{OrderID: "ORD-1", Amount: 1000, Description: "Order 1"})
+	_, err := newGateway(t, server, nil).Initiate(context.Background(), PaymentData{OrderID: "ORD-1", Amount: myanmarpayments.Kyat(1000), Description: "Order 1"})
 	var apiErr *myanmarpayments.APIError
 	if !errors.As(err, &apiErr) || apiErr.GatewayCode != "PAYMENT ALREADY EXISTS" || apiErr.HTTPStatus != 200 {
 		t.Fatalf("unexpected error %v", err)
@@ -202,11 +202,31 @@ func TestWebhookSecretHeaderIsCheckedWhenConfigured(t *testing.T) {
 
 func TestValidationAndDefaults(t *testing.T) {
 	var invalid *myanmarpayments.InvalidPaymentDataError
-	err := PaymentData{OrderID: strings.Repeat("A", 21), Amount: 1000, Description: strings.Repeat("d", 51)}.Validate()
+	err := PaymentData{OrderID: strings.Repeat("A", 21), Amount: myanmarpayments.Kyat(1000), Description: strings.Repeat("d", 51)}.Validate()
 	if !errors.As(err, &invalid) || invalid.Errors["orderId"] == "" || invalid.Errors["description"] == "" {
 		t.Fatalf("expected limits to fail, got %v", err)
 	}
 	if (Config{Production: true}).ResolvedBaseURL() != "https://paymenthubapi.yomabank.com" || (Config{}).ResolvedBaseURL() != SandboxURL {
 		t.Fatal("unexpected base URLs")
+	}
+}
+
+func TestYomaRejectsDecimalAndNonPositiveAmounts(t *testing.T) {
+	for name, amount := range map[string]myanmarpayments.Amount{
+		"decimal":  myanmarpayments.MustParseAmount("1000.50"),
+		"zero":     myanmarpayments.Kyat(0),
+		"negative": myanmarpayments.Kyat(-1),
+		"missing":  {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var invalid *myanmarpayments.InvalidPaymentDataError
+			err := PaymentData{OrderID: "ORD-1", Amount: amount, Description: "Order 1"}.Validate()
+			if !errors.As(err, &invalid) || invalid.Errors["amount"] == "" {
+				t.Fatalf("expected amount error, got %v", err)
+			}
+			if name == "decimal" && !strings.Contains(invalid.Errors["amount"], "Yoma MMQR does not accept decimal amounts") {
+				t.Fatalf("unexpected message %q", invalid.Errors["amount"])
+			}
+		})
 	}
 }
