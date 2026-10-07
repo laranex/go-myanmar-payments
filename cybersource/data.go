@@ -3,6 +3,7 @@ package cybersource
 import (
 	"regexp"
 
+	myanmarpayments "github.com/laranex/go-myanmar-payments"
 	"github.com/laranex/go-myanmar-payments/internal/validate"
 )
 
@@ -29,8 +30,9 @@ var (
 type PaymentData struct {
 	// OrderID is your order id (reference_number), at most 50 characters. Echoed back as req_reference_number.
 	OrderID string
-	// Amount is the order total in Currency as a decimal string, e.g. "10.50"; 0 or more, at most 15 characters.
-	Amount string
+	// Amount is the order total in Currency, 0 or more and at most 15 characters including the
+	// decimal point, e.g. myanmarpayments.MustParseAmount("10.50").
+	Amount myanmarpayments.Amount
 	// CallbackURL is the HTTPS URL CyberSource posts the result to (override_backoffice_post_url), at most 255 characters.
 	CallbackURL string
 	// ReturnURL is the HTTPS receipt page (override_custom_receipt_page), at most 255 characters (optional).
@@ -72,7 +74,7 @@ func (d PaymentData) Validate() error {
 	return validate.New().
 		Required("orderId", d.OrderID).
 		Max("orderId", d.OrderID, 50).
-		Decimal("amount", d.Amount, 3, 15, true).
+		Amount("amount", d.Amount, validate.AmountRule{Gateway: "CyberSource", MaxDecimals: -1, MaxLength: 15, AllowZero: true}).
 		Required("callbackUrl", d.CallbackURL).
 		URL("callbackUrl", d.CallbackURL).HTTPS("callbackUrl", d.CallbackURL).Max("callbackUrl", d.CallbackURL, 255).
 		URL("returnUrl", d.ReturnURL).HTTPS("returnUrl", d.ReturnURL).Max("returnUrl", d.ReturnURL, 255).

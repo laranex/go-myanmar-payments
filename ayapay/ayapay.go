@@ -107,7 +107,7 @@ func (g *Gateway) Initiate(data PaymentData) (*myanmarpayments.FormPayment, erro
 	copy(refs, data.UserRefs)
 	fields := []myanmarpayments.FormField{
 		{Name: "merchOrderId", Value: data.OrderID},
-		{Name: "amount", Value: strconv.FormatInt(data.Amount, 10)},
+		{Name: "amount", Value: data.Amount.String()},
 		{Name: "appKey", Value: g.config.AppKey},
 		{Name: "timestamp", Value: strconv.FormatInt(g.now().Unix(), 10)},
 		{Name: "userRef1", Value: refs[0]},

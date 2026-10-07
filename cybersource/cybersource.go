@@ -62,7 +62,7 @@ func (g *Gateway) Initiate(data PaymentData) (*myanmarpayments.FormPayment, erro
 		"locale":                       data.locale(),
 		"transaction_type":             string(data.transactionType()),
 		"reference_number":             data.OrderID,
-		"amount":                       data.Amount,
+		"amount":                       data.Amount.String(),
 		"currency":                     data.currency(),
 		"override_custom_receipt_page": data.ReturnURL,
 		"override_backoffice_post_url": data.CallbackURL,

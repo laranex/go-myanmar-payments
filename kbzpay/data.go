@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	myanmarpayments "github.com/laranex/go-myanmar-payments"
 	"github.com/laranex/go-myanmar-payments/internal/validate"
 )
 
@@ -15,8 +16,9 @@ var orderIDPattern = regexp.MustCompile(`^[A-Za-z0-9_]+$`)
 type PaymentData struct {
 	// OrderID is your unique order id (merch_order_id): letters, digits and "_" only, at most 40.
 	OrderID string
-	// Amount is the amount in kyat as a decimal string with up to 2 decimal places, e.g. "1000" or "1000.50".
-	Amount string
+	// Amount is the amount in kyat, greater than 0 with at most 2 decimal places, e.g.
+	// myanmarpayments.Kyat(1000) or myanmarpayments.MustParseAmount("1000.50"). KBZ Pay only accepts MMK.
+	Amount myanmarpayments.Amount
 	// CallbackURL is the public URL KBZ posts the result to (notify_url): at most 512 characters, no query string.
 	CallbackURL string
 	// Title is the product name shown to the customer (optional).
@@ -33,7 +35,7 @@ func (d PaymentData) Validate() error {
 		Required("orderId", d.OrderID).
 		Max("orderId", d.OrderID, 40).
 		Pattern("orderId", d.OrderID, orderIDPattern, "letters, numbers and underscores").
-		Decimal("amount", d.Amount, 2, 0, false).
+		Amount("amount", d.Amount, validate.AmountRule{Gateway: "KBZ Pay", MaxDecimals: 2}).
 		Required("callbackUrl", d.CallbackURL).
 		URL("callbackUrl", d.CallbackURL).
 		Max("callbackUrl", d.CallbackURL, 512).

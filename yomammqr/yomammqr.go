@@ -63,7 +63,7 @@ func (g *Gateway) Initiate(ctx context.Context, data PaymentData) (*myanmarpayme
 	body, err := g.call(ctx, "payment/checkout", map[string]any{
 		"merchantId":  g.config.MerchantID,
 		"orderNumber": data.OrderID,
-		"amount":      strconv.FormatInt(data.Amount, 10),
+		"amount":      data.Amount.String(),
 		"description": data.Description,
 	}, nil)
 	if err != nil {
