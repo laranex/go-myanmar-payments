@@ -44,18 +44,3 @@ Run all tests:
 ```bash
 go test -race ./...
 ```
-
-## Releasing
-
-Pushing a version tag releases the module: `.github/workflows/release.yml` runs the test suite, creates the GitHub release, and asks the Go module proxy for the new version so pkg.go.dev lists it.
-
-1. Add the release's section to `CHANGELOG.md` (`## v4.1.0 - 2026-10-08`). Its body becomes the GitHub release notes; when no section matches the tag, the notes are generated from the merged pull requests instead.
-2. Merge into `dev`.
-3. Tag the merged commit and push the tag:
-
-   ```bash
-   git tag v4.1.0
-   git push origin v4.1.0
-   ```
-
-That's it. Tags must be semantic versions whose major version matches the module path (`v4.x.y` for `/v4`); a pre-release suffix such as `v4.1.0-rc.1` marks the GitHub release as a pre-release. `CHANGELOG.md` is written by hand before tagging; nothing commits it back after the release. The module proxy step is skipped while the repository is private.
