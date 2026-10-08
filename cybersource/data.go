@@ -33,11 +33,11 @@ type PaymentData struct {
 	// Amount is the order total in Currency, 0 or more and at most 15 characters including the
 	// decimal point, e.g. myanmarpayments.MustParseAmount("10.50").
 	Amount myanmarpayments.Amount
-	// CallbackURL is the HTTPS URL CyberSource posts the result to (override_backoffice_post_url), at most 255 characters.
+	// CallbackURL is the URL CyberSource posts the result to (override_backoffice_post_url), at most 255 characters.
 	CallbackURL string
-	// ReturnURL is the HTTPS receipt page (override_custom_receipt_page), at most 255 characters (optional).
+	// ReturnURL is the receipt page (override_custom_receipt_page), at most 255 characters (optional).
 	ReturnURL string
-	// CancelURL is the HTTPS page shown on cancel (override_custom_cancel_page), at most 255 characters (optional).
+	// CancelURL is the page shown on cancel (override_custom_cancel_page), at most 255 characters (optional).
 	CancelURL string
 	// Currency is an ISO 4217 code; empty means MMK.
 	Currency string
@@ -76,9 +76,9 @@ func (d PaymentData) Validate() error {
 		Max("orderId", d.OrderID, 50).
 		Amount("amount", d.Amount, validate.AmountRule{Gateway: "CyberSource", MaxDecimals: -1, MaxLength: 15, AllowZero: true}).
 		Required("callbackUrl", d.CallbackURL).
-		URL("callbackUrl", d.CallbackURL).HTTPS("callbackUrl", d.CallbackURL).Max("callbackUrl", d.CallbackURL, 255).
-		URL("returnUrl", d.ReturnURL).HTTPS("returnUrl", d.ReturnURL).Max("returnUrl", d.ReturnURL, 255).
-		URL("cancelUrl", d.CancelURL).HTTPS("cancelUrl", d.CancelURL).Max("cancelUrl", d.CancelURL, 255).
+		URL("callbackUrl", d.CallbackURL).Max("callbackUrl", d.CallbackURL, 255).
+		URL("returnUrl", d.ReturnURL).Max("returnUrl", d.ReturnURL, 255).
+		URL("cancelUrl", d.CancelURL).Max("cancelUrl", d.CancelURL, 255).
 		Pattern("currency", d.currency(), currencyPattern, "a three letter ISO 4217 code").
 		Pattern("locale", d.locale(), localePattern, "a locale code such as en-us").
 		When(t != Sale && t != Authorization && t != SaleAndCreateToken && t != AuthorizationAndCreateToken, "transactionType", "The transactionType field is not a supported transaction type.").

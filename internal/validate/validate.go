@@ -103,15 +103,7 @@ func (v *Validator) URL(field, value string) *Validator {
 	}
 	parsed, err := url.Parse(value)
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		v.fail(field, fmt.Sprintf("The %s field must be a valid URL.", field))
-	}
-	return v
-}
-
-// HTTPS fails when a non-empty value is not an https URL.
-func (v *Validator) HTTPS(field, value string) *Validator {
-	if value != "" && !strings.HasPrefix(strings.ToLower(value), "https://") {
-		v.fail(field, fmt.Sprintf("The %s field must be an HTTPS URL.", field))
+		v.fail(field, fmt.Sprintf("The %s field must be a valid http or https URL.", field))
 	}
 	return v
 }

@@ -113,13 +113,20 @@ func TestTamperedCallbackIsRejected(t *testing.T) {
 	}
 }
 
+func TestValidationAcceptsHTTPURLs(t *testing.T) {
+	data := PaymentData{OrderID: "ORDER-4", Amount: myanmarpayments.Kyat(1000), CallbackURL: "http://shop.test/cb", ReturnURL: "http://shop.test/done", CancelURL: "http://shop.test/cancel"}
+	if err := data.Validate(); err != nil {
+		t.Fatalf("unexpected error %v", err)
+	}
+}
+
 func TestValidationFollowsTheSecureAcceptanceFieldRules(t *testing.T) {
 	base := PaymentData{OrderID: "ORDER-1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb"}
 	cases := map[string]struct {
 		mutate func(*PaymentData)
 		field  string
 	}{
-		"http callback":        {func(d *PaymentData) { d.CallbackURL = "http://shop.test/cb" }, "callbackUrl"},
+		"ftp callback":         {func(d *PaymentData) { d.CallbackURL = "ftp://shop.test/cb" }, "callbackUrl"},
 		"url over 255":         {func(d *PaymentData) { d.ReturnURL = "https://shop.test/" + strings.Repeat("a", 250) }, "returnUrl"},
 		"amount over 15 chars": {func(d *PaymentData) { d.Amount = myanmarpayments.MustParseAmount("1234567890123.45") }, "amount"},
 		"negative amount":      {func(d *PaymentData) { d.Amount = myanmarpayments.Kyat(-1) }, "amount"},

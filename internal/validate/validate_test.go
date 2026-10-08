@@ -27,7 +27,6 @@ func TestErrIsNilWhenEveryCheckPasses(t *testing.T) {
 		Between("expires", 30, 1, 60).
 		Amount("amount", myanmarpayments.Kyat(1000), AmountRule{Gateway: "KBZ Pay", MaxDecimals: 2}).
 		URL("callback_url", "https://shop.test/callback").
-		HTTPS("callback_url", "https://shop.test/callback").
 		When(false, "items", "never").
 		Err()
 
@@ -83,18 +82,14 @@ func TestURLRules(t *testing.T) {
 		URL("ftp", "ftp://shop.test/callback").
 		URL("broken", "http://[::1").
 		URL("http_ok", "http://shop.test/callback").
-		HTTPS("plain", "http://shop.test/callback").
-		HTTPS("upper_ok", "HTTPS://shop.test/callback").
-		HTTPS("skipped", "").
+		URL("upper_ok", "HTTPS://shop.test/callback").
+		URL("skipped", "").
 		Err())
 
 	for _, field := range []string{"relative", "ftp", "broken"} {
-		if errs[field] != "The "+field+" field must be a valid URL." {
+		if errs[field] != "The "+field+" field must be a valid http or https URL." {
 			t.Errorf("%s = %q, want the valid URL message", field, errs[field])
 		}
-	}
-	if errs["plain"] != "The plain field must be an HTTPS URL." {
-		t.Errorf("plain = %q, want the HTTPS message", errs["plain"])
 	}
 	for _, field := range []string{"http_ok", "upper_ok", "skipped"} {
 		if _, failed := errs[field]; failed {
