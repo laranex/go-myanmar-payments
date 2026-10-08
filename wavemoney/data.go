@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
-	"net/url"
 
 	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
 	"github.com/laranex/go-myanmar-payments/v4/internal/validate"
@@ -23,7 +22,7 @@ type Item struct {
 type PaymentData struct {
 	// OrderID is your order id. One order can have several payment attempts.
 	OrderID string
-	// CallbackURL is the HTTPS URL on port 443 that Wave posts the result to (backend_result_url).
+	// CallbackURL is the URL that Wave posts the result to (backend_result_url).
 	CallbackURL string
 	// ReturnURL is where Wave sends the customer back (frontend_result_url). Not proof of payment.
 	ReturnURL string
@@ -70,11 +69,7 @@ func (d PaymentData) Validate() error {
 	v := validate.New().
 		Required("orderId", d.OrderID).
 		Required("callbackUrl", d.CallbackURL).
-		URL("callbackUrl", d.CallbackURL).
-		HTTPS("callbackUrl", d.CallbackURL)
-	if parsed, err := url.Parse(d.CallbackURL); err == nil && parsed.Port() != "" && parsed.Port() != "443" {
-		v.When(true, "callbackUrl", "The callbackUrl field must use the standard HTTPS port 443.")
-	}
+		URL("callbackUrl", d.CallbackURL)
 	v.Required("returnUrl", d.ReturnURL).
 		URL("returnUrl", d.ReturnURL).
 		Required("description", d.Description).

@@ -108,4 +108,4 @@ Check AYA's browser return with `aya.VerifyRedirect(request)`.
 - Treating `StatusPending` or `StatusUnknown` as paid.
 - Converting amounts through `float64`.
 - Reusing a Wave `MerchantReferenceID` (unique per attempt), or calling Yoma `Initiate` twice for the same order (use `RenewQR`).
-- A Wave `CallbackURL` that is not HTTPS on port 443; opening a KBZ Pay PWA link outside a phone with the KBZ Pay app.
+- Opening a KBZ Pay PWA link outside a phone with the KBZ Pay app.

@@ -189,7 +189,7 @@ func TestOrderIDFallsBackToMerchantReferenceID(t *testing.T) {
 func TestInitiateLeavesInvalidDataUntouched(t *testing.T) {
 	data := paymentData()
 	data.MerchantReferenceID = ""
-	data.CallbackURL = "http://shop.test/cb"
+	data.CallbackURL = "ftp://shop.test/cb"
 
 	var invalid *myanmarpayments.InvalidPaymentDataError
 	if _, err := newGateway(t, nil).Initiate(context.Background(), data); !errors.As(err, &invalid) {
@@ -217,8 +217,7 @@ func TestValidationFollowsWaveRules(t *testing.T) {
 		field  string
 	}{
 		"no items":           {func(d *PaymentData) { d.Items = nil }, "items"},
-		"http callback":      {func(d *PaymentData) { d.CallbackURL = "http://shop.test/cb" }, "callbackUrl"},
-		"non standard port":  {func(d *PaymentData) { d.CallbackURL = "https://shop.test:8443/cb" }, "callbackUrl"},
+		"ftp callback":       {func(d *PaymentData) { d.CallbackURL = "ftp://shop.test/cb" }, "callbackUrl"},
 		"zero item amount":   {func(d *PaymentData) { d.Items = []Item{{"A", myanmarpayments.Kyat(0)}} }, "items.0.amount"},
 		"missing return url": {func(d *PaymentData) { d.ReturnURL = "" }, "returnUrl"},
 		"decimal item":       {func(d *PaymentData) { d.Items = []Item{{"A", myanmarpayments.MustParseAmount("250.50")}} }, "items.0.amount"},
@@ -234,6 +233,15 @@ func TestValidationFollowsWaveRules(t *testing.T) {
 				t.Fatalf("expected error on %s, got %v", tc.field, err)
 			}
 		})
+	}
+}
+
+func TestValidationAcceptsHTTPCallbackURLs(t *testing.T) {
+	for _, callbackURL := range []string{"http://shop.test/cb", "https://shop.test:8443/cb"} {
+		data := PaymentData{OrderID: "100", CallbackURL: callbackURL, ReturnURL: "http://shop.test/done", Description: "x", Items: []Item{{"A", myanmarpayments.Kyat(250)}}}
+		if err := data.Validate(); err != nil {
+			t.Fatalf("%s: unexpected error %v", callbackURL, err)
+		}
 	}
 }
 
