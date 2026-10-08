@@ -3,7 +3,7 @@ package kbzpay
 import (
 	"strings"
 
-	"github.com/laranex/go-myanmar-payments/internal/env"
+	"github.com/laranex/go-myanmar-payments/v4/internal/env"
 )
 
 // Endpoints from the KBZ Pay UAT documentation.

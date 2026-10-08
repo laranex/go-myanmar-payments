@@ -3,7 +3,7 @@ package wavemoney
 import (
 	"strings"
 
-	"github.com/laranex/go-myanmar-payments/internal/env"
+	"github.com/laranex/go-myanmar-payments/v4/internal/env"
 )
 
 // Endpoints from the WPPG documentation. Wave serves the authenticate page without the API port.

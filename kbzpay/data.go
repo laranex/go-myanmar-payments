@@ -5,8 +5,8 @@ import (
 	"regexp"
 	"strings"
 
-	myanmarpayments "github.com/laranex/go-myanmar-payments"
-	"github.com/laranex/go-myanmar-payments/internal/validate"
+	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
+	"github.com/laranex/go-myanmar-payments/v4/internal/validate"
 )
 
 var orderIDPattern = regexp.MustCompile(`^[A-Za-z0-9_]+$`)

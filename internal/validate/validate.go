@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	myanmarpayments "github.com/laranex/go-myanmar-payments"
+	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
 )
 
 // Validator collects one error per field.

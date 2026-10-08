@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/laranex/go-myanmar-payments/internal/values"
+	"github.com/laranex/go-myanmar-payments/v4/internal/values"
 )
 
 // Signer implements KBZ Pay's signature: every non-empty scalar field except sign and

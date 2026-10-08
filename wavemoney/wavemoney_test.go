@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	myanmarpayments "github.com/laranex/go-myanmar-payments"
-	"github.com/laranex/go-myanmar-payments/internal/testutil"
-	"github.com/laranex/go-myanmar-payments/internal/values"
+	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
+	"github.com/laranex/go-myanmar-payments/v4/internal/testutil"
+	"github.com/laranex/go-myanmar-payments/v4/internal/values"
 )
 
 func newGateway(t *testing.T, server *testutil.Server) *Gateway {
