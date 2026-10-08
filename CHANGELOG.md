@@ -11,6 +11,7 @@ Initial release. The version number matches the other Laranex packages (`php-mya
 - Exact `Amount` type (`Kyat`, `ParseAmount`, `MustParseAmount`) kept as decimal text, so amounts never pass through a float; JSON marshals as a string and unmarshals from a string or a number.
 - A `Config` struct per gateway plus `ConfigFromEnv(getenv)`, which reads the same `*_SANDBOX`, credential and URL variables as the PHP packages and reports missing values as `ConfigurationError`.
 - Result types: `RedirectPayment`, `FormPayment`, `QrPayment` and `AppPayment` for payment flows, `PaymentCallback` (with a gateway-independent `PaymentStatus` and the `Acknowledgement` each gateway expects) for verified callbacks, and `PaymentStatusResult` for status checks.
+- Wave Money's sandbox is `https://preprodpayments.wavemoney.io:8107` (`wavemoney.SandboxURL`), with checkout at `https://preprodpayments.wavemoney.io/authenticate` (`wavemoney.SandboxAuthenticateURL`).
 - Wave Money: `Initiate` validates `PaymentData` before filling an empty `MerchantReferenceID`, so invalid data is returned untouched; callbacks fall back to `merchantReferenceId` for the order id when `orderId` is missing, null or empty (same rule as `php-myanmar-payments`).
 - Typed errors: `InvalidPaymentDataError`, `APIError`, `SignatureVerificationError` and `ConfigurationError`.
 - `HTTPDoer` and `TokenCache` abstractions so any HTTP client or cache can be plugged in; `DefaultHTTPClient` and `MemoryTokenCache` ship with the module.
