@@ -20,7 +20,7 @@ func newGateway(t *testing.T, server *testutil.Server) *Gateway {
 	config := Config{MerchantID: "testmerchantID", SecretKey: "test-secret", MerchantName: "Shop"}
 	if server != nil {
 		config.BaseURL = server.URL
-		config.AuthenticateURL = "https://testpayments.wavemoney.io"
+		config.AuthenticateURL = "https://preprodpayments.wavemoney.io"
 	}
 	gateway, err := New(config, nil)
 	if err != nil {
@@ -82,7 +82,7 @@ func TestInitiatePostsAHashedFormAndRedirectsToAuthenticate(t *testing.T) {
 	if form.Get("hash") != hmacHex("300testmerchantID1001000https://shop.test/wave/callbackref-001", "test-secret") {
 		t.Fatal("request hash mismatch")
 	}
-	if payment.URL != "https://testpayments.wavemoney.io/authenticate?transaction_id=enc%2F123%2Babc" || payment.GatewayReference != "enc/123+abc" {
+	if payment.URL != "https://preprodpayments.wavemoney.io/authenticate?transaction_id=enc%2F123%2Babc" || payment.GatewayReference != "enc/123+abc" {
 		t.Fatalf("unexpected payment %+v", payment)
 	}
 }
@@ -239,7 +239,7 @@ func TestValidationFollowsWaveRules(t *testing.T) {
 
 func TestDocumentedHosts(t *testing.T) {
 	sandbox, production := Config{}, Config{Production: true}
-	if sandbox.ResolvedBaseURL() != SandboxURL || sandbox.ResolvedAuthenticateURL() != "https://testpayments.wavemoney.io" {
+	if sandbox.ResolvedBaseURL() != SandboxURL || sandbox.ResolvedAuthenticateURL() != "https://preprodpayments.wavemoney.io" {
 		t.Fatal("unexpected sandbox hosts")
 	}
 	if production.ResolvedBaseURL() != ProductionURL || production.ResolvedAuthenticateURL() != ProductionAuthenticateURL {

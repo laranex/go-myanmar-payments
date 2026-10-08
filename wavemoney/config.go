@@ -9,9 +9,9 @@ import (
 // Endpoints from the WPPG documentation. Wave serves the authenticate page without the API port.
 // The documented test host no longer resolves in DNS (October 2026); set BaseURL if Wave gives you another.
 const (
-	SandboxURL                = "https://testpayments.wavemoney.io:8107"
+	SandboxURL                = "https://preprodpayments.wavemoney.io:8107"
 	ProductionURL             = "https://payments.wavemoney.io"
-	SandboxAuthenticateURL    = "https://testpayments.wavemoney.io"
+	SandboxAuthenticateURL    = "https://preprodpayments.wavemoney.io"
 	ProductionAuthenticateURL = "https://payments.wavemoney.io"
 	defaultTimeToLiveSeconds  = 300
 )
