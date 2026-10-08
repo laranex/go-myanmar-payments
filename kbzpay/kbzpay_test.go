@@ -255,7 +255,7 @@ func TestConfigNamesAMissingKeyAndNormalisesThePWAURL(t *testing.T) {
 	}
 	for _, pwa := range []string{"https://static.kbzpay.com/pgw/uat/pwa/#", "https://static.kbzpay.com/pgw/uat/pwa/#/"} {
 		if got := (Config{PWAURL: pwa}).ResolvedPWAURL(); got != SandboxPWAURL {
-			t.Fatalf("pwa %s normalised to %s", pwa, got)
+			t.Fatalf("pwa %s normalized to %s", pwa, got)
 		}
 	}
 	if (Config{Production: true}).ResolvedAPIURL() != ProductionAPIURL {

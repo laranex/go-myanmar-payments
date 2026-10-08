@@ -28,7 +28,7 @@ type Config struct {
 	Production bool
 	// APIURL overrides the API base URL, e.g. to go through a proxy.
 	APIURL string
-	// PWAURL overrides the PWA checkout URL. A trailing "#" or "#/" is normalised to "#/".
+	// PWAURL overrides the PWA checkout URL. A trailing "#" or "#/" is normalized to "#/".
 	PWAURL string
 }
 
