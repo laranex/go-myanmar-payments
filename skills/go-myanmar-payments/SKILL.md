@@ -9,57 +9,103 @@ metadata:
 
 # Go Myanmar Payments
 
-Use this skill when a Go service takes payments through KBZ Pay, Wave Money, AYA Payment Gateway, Yoma MMQR or CyberSource.
+## When to use
 
-## Primary Goal
+Use this skill when a Go service takes payments through KBZ Pay, Wave Money, AYA Payment Gateway, Yoma MMQR or CyberSource. Start payments and verify callbacks with the module's typed API; never build gateway signatures by hand.
 
-- start payments and verify callbacks with the module's typed API, never with hand-built signatures
+## Install
 
-## Workflow
+```bash
+go get github.com/laranex/go-myanmar-payments/v4
+```
 
-### 1. Install and build the gateway
+Requires Go 1.22+ and uses only the standard library. Import the root as `myanmarpayments "github.com/laranex/go-myanmar-payments/v4"` and the gateway sub-packages `.../v4/kbzpay`, `wavemoney`, `ayapay`, `yomammqr` and `cybersource`.
 
-- `go get github.com/laranex/go-myanmar-payments/v4` (Go 1.22+, standard library only); import the root as `myanmarpayments "github.com/laranex/go-myanmar-payments/v4"` and the gateway sub-packages `.../v4/kbzpay`, `wavemoney`, `ayapay`, `yomammqr`, `cybersource`
-- each sub-package has a `Config` struct and `ConfigFromEnv(os.Getenv)`, reading the same `KBZ_PAY_*`, `WAVE_MONEY_*`, `AYA_PAY_*`, `YOMA_MMQR_*`, `CYBER_SOURCE_*` variables as the PHP packages; `*_SANDBOX=false` (or `Production: true`) for production
-- build with `New`: `kbzpay.New(cfg, client)`, `wavemoney.New(cfg, client)`, `ayapay.New(cfg, client)`, `yomammqr.New(cfg, client, cache)`, `cybersource.New(cfg)`; `client` is any `myanmarpayments.HTTPDoer` (`*http.Client` works; nil uses `DefaultHTTPClient()`), `cache` any `myanmarpayments.TokenCache` (nil uses `NewMemoryTokenCache()`; share a Redis-backed one across processes); a missing credential returns `*ConfigurationError`
+## Configure
 
-### 2. Start a payment
+Each sub-package has a `Config` struct and `ConfigFromEnv(os.Getenv)`, which reads `KBZ_PAY_*`, `WAVE_MONEY_*`, `AYA_PAY_*`, `YOMA_MMQR_*` and `CYBER_SOURCE_*` (the same variables as the PHP packages). The zero value targets the sandbox; set `*_SANDBOX=false` or `Production: true` in production.
 
-- fill the gateway's `PaymentData` struct (`kbzpay`, `wavemoney` with `[]wavemoney.Item`, `ayapay` with `ayapay.Method`, `yomammqr`, `cybersource` with `cybersource.TransactionType`); bad input returns `*InvalidPaymentDataError` with `Errors`
-- amounts are `myanmarpayments.Amount`: `Kyat(1000)` or `ParseAmount("1000.50")` (returns an error; `MustParseAmount` for constants), never floats; only KBZ Pay (≤2 decimals) and CyberSource accept decimals, Wave, AYA and Yoma take whole kyat
-- pass the request `ctx` to every network call and act on the typed result:
-  - `*RedirectPayment` (`kbz.PWA(ctx, data)`, `wave.Initiate(ctx, &data)`): `http.Redirect(w, r, payment.URL, http.StatusFound)`
-  - `*FormPayment` (`aya.Initiate(data)`, `cs.Initiate(data)`, no network call): write `payment.HTML()` (auto-submitting page) or render `Action` and `Fields` yourself
-  - `*QrPayment`: KBZ (`kbz.QR`) gives `QRString` to encode; Yoma (`yoma.Initiate`) gives `QRImage` (base64, `QRImageDataURI("image/png")`), `ExpiresAt` and `Reference`
-  - `*AppPayment` (`kbz.App`): JSON-encode it for the mobile app
-- store the order id; for Wave store `data.MerchantReferenceID` (filled by `Initiate` when empty), for Yoma the QR `Reference`
+```go
+kbz, err := kbzpay.New(kbzpay.ConfigFromEnv(os.Getenv), nil)
+```
 
-### 3. Handle the callback
+- `kbzpay.New(cfg, client)`, `wavemoney.New(cfg, client)`, `ayapay.New(cfg, client)`, `yomammqr.New(cfg, client, cache)`, `cybersource.New(cfg)`
+- `client` is any `myanmarpayments.HTTPDoer` (`*http.Client` works; nil uses `DefaultHTTPClient()`)
+- `cache` is any `myanmarpayments.TokenCache` for the Yoma access token (nil uses `NewMemoryTokenCache()`; share a Redis-backed one across processes)
+- a missing credential returns `*myanmarpayments.ConfigurationError`
 
-- `request, err := myanmarpayments.NewCallbackRequestFromHTTP(r)` (`NewCallbackRequestFromJSON` to replay a stored payload)
-- `callback, err := gateway.HandleCallback(request)` verifies the signature; on failure `err` is `*SignatureVerificationError` (use `errors.As`); AYA's browser return is checked with `aya.VerifyRedirect(request)`
-- check `callback.Status` (`StatusSuccessful`, ...) or `IsSuccessful()`, compare `callback.Amount` with the order, make fulfillment idempotent (gateways retry)
-- reply with `callback.Acknowledgement.Write(w)`
+## Use
 
-### 4. Check status and handle errors
+### Amounts
 
-- `kbz.Status(ctx, orderID)`, `aya.Status(ctx, orderID)`, `yoma.Status(ctx, reference)` return `*PaymentStatusResult`
-- gateway failures return `*APIError` (`GatewayCode`, `GatewayMessage`, `HTTPStatus`, `Raw`; `Unwrap` exposes transport errors such as a canceled `ctx`)
+Amounts are `myanmarpayments.Amount`: `Kyat(1000)` or `ParseAmount("1000.50")` (returns an error; `MustParseAmount` for constants), never `float64`. Only KBZ Pay (up to 2 decimals) and CyberSource accept decimals; Wave, AYA and Yoma take whole kyat. Invalid data returns `*InvalidPaymentDataError` with `Errors`.
 
-## Gateway Gotchas
+### Start a payment
 
-- Wave: `MerchantReferenceID` must be unique per attempt; `CallbackURL` must be HTTPS on port 443; pass `*PaymentData`
-- KBZ Pay PWA: works only on a phone with the KBZ Pay app, and the Referer must match the URL registered with KBZ; the acknowledgement is a plain `success`
-- AYA: pick `Channel` from `aya.Services(ctx)` (`Service.Key`, check `Supports(method)`)
-- Yoma: a QR lives 120 seconds (`yomammqr.QRLifetime`); call `Initiate` once per order, then `RenewQR(ctx, orderID)` after expiry
+Fill the gateway's `PaymentData` struct (`wavemoney` takes `[]wavemoney.Item`, `ayapay` an `ayapay.Method`, `cybersource` a `cybersource.TransactionType`), pass the request `ctx` to every network call and act on the typed result:
 
-## Examples
+```go
+payment, err := kbz.PWA(ctx, kbzpay.PaymentData{
+    OrderID:     "ORDER_1",
+    Amount:      myanmarpayments.Kyat(1000),
+    CallbackURL: "https://shop.test/kbz/callback",
+})
+if err != nil {
+    return err
+}
+http.Redirect(w, r, payment.URL, http.StatusFound)
+```
 
-- KBZ Pay PWA: `kbz.PWA(ctx, kbzpay.PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/kbz/callback"})` then redirect to `payment.URL`
-- AYA checkout: `aya.Initiate(ayapay.PaymentData{OrderID: "ORDER123", Amount: myanmarpayments.Kyat(1000), Channel: "kbz_pay", Method: ayapay.MethodQR})` then write `payment.HTML()`
+- `*RedirectPayment` from `kbz.PWA(ctx, data)` and `wave.Initiate(ctx, &data)`: redirect to `payment.URL`. For Wave, store `data.MerchantReferenceID` (filled by `Initiate` when empty).
+- `*FormPayment` from `aya.Initiate(data)` and `cs.Initiate(data)` (no network call): write `payment.HTML()` for an auto-submitting page, or render `Action` and `Fields` yourself.
+- `*QrPayment` from `kbz.QR(ctx, data)` (encode `QRString`) and `yoma.Initiate(ctx, data)` (`QRImage` as base64, `QRImageDataURI("image/png")`, `ExpiresAt`, `Reference`). A Yoma QR lives `yomammqr.QRLifetime` (120 seconds); renew it with `yoma.RenewQR(ctx, orderID)`.
+- `*AppPayment` from `kbz.App(ctx, data)`: JSON-encode it for the mobile app.
 
-## Anti-patterns
+AYA needs a channel: list them with `aya.Services(ctx)` (each `Service` has `Key` and `Supports(method)`), then `aya.Initiate(ayapay.PaymentData{OrderID: "ORDER123", Amount: myanmarpayments.Kyat(1000), Channel: "kbz_pay", Method: ayapay.MethodQR})`.
 
-- do not fulfill from return pages or query strings; fulfill from the verified callback or a status check
-- do not convert amounts through `float64` or treat `StatusPending` / `StatusUnknown` as paid
-- do not reuse a Wave `MerchantReferenceID` or re-run Yoma `Initiate` for the same order
+### Handle the callback
+
+```go
+request, err := myanmarpayments.NewCallbackRequestFromHTTP(r)
+if err != nil {
+    return err
+}
+
+callback, err := kbz.HandleCallback(request)
+if err != nil {
+    var sigErr *myanmarpayments.SignatureVerificationError
+    if errors.As(err, &sigErr) {
+        http.Error(w, "invalid signature", http.StatusBadRequest)
+        return nil
+    }
+    return err
+}
+
+if callback.IsSuccessful() {
+    // compare callback.Amount with the order, then fulfill callback.OrderID once
+}
+
+return callback.Acknowledgement.Write(w)
+```
+
+Check AYA's browser return with `aya.VerifyRedirect(request)`.
+
+### Check status and handle errors
+
+- `kbz.Status(ctx, orderID)`, `aya.Status(ctx, orderID)` and `yoma.Status(ctx, reference)` return `*PaymentStatusResult` with `Status` and `IsSuccessful()`.
+- Statuses are `StatusSuccessful`, `StatusPending`, `StatusFailed`, `StatusCancelled`, `StatusExpired` and `StatusUnknown`.
+- Gateway failures return `*APIError` (`GatewayCode`, `GatewayMessage`, `HTTPStatus`, `Raw`); `Unwrap` exposes transport errors such as a canceled `ctx`.
+
+## Test your app
+
+- Point the gateway at an `httptest.Server` with the config's URL override (for example `kbzpay.Config{APIURL: server.URL}`), or pass an `HTTPDoer` stub that returns canned responses.
+- Replay a stored callback with `myanmarpayments.NewCallbackRequestFromJSON(payload, header)`; it is still signature-checked, so use a payload the gateway actually signed.
+- To test your own fulfillment code, build a `myanmarpayments.PaymentCallback{OrderID: "ORDER_1", Status: myanmarpayments.StatusSuccessful}` yourself instead of calling the gateway.
+
+## Avoid
+
+- Fulfilling orders from return pages or query strings; fulfill only from a verified callback or a status check.
+- Treating `StatusPending` or `StatusUnknown` as paid.
+- Converting amounts through `float64`.
+- Reusing a Wave `MerchantReferenceID` (unique per attempt), or calling Yoma `Initiate` twice for the same order (use `RenewQR`).
+- A Wave `CallbackURL` that is not HTTPS on port 443; opening a KBZ Pay PWA link outside a phone with the KBZ Pay app.
