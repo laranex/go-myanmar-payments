@@ -49,6 +49,16 @@ callback.Acknowledgement.Write(w) // KBZ Pay expects a plain "success"
 
 The other gateways follow the same shape: `wavemoney.Initiate`, `ayapay.Initiate` (form), `yomammqr.Initiate` / `RenewQR` and `cybersource.Initiate` (form), each with `HandleCallback`; KBZ Pay, AYA and Yoma MMQR also offer `Status`. Amounts are exact `myanmarpayments.Amount` values (`Kyat`, `ParseAmount`, `MustParseAmount`) and never pass through a float. See the [documentation](https://laranex.vercel.app/go-myanmar-payments) for every gateway, the amount rules and callback handling.
 
+### AI agents
+
+This repository ships an agent skill in [`skills/go-myanmar-payments`](skills/go-myanmar-payments) that teaches coding agents (Claude Code, Codex, Cursor and others) how to integrate the gateways correctly. Install it with:
+
+```bash
+npx skills add laranex/go-myanmar-payments
+```
+
+Or copy `skills/go-myanmar-payments` into your project's `.claude/skills` or `.agents/skills` directory.
+
 ## Testing
 
 ```bash

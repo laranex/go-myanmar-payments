@@ -15,3 +15,4 @@ Initial release. The version number matches the other Laranex packages (`php-mya
 - `HTTPDoer` and `TokenCache` abstractions so any HTTP client or cache can be plugged in; `DefaultHTTPClient` and `MemoryTokenCache` ship with the module.
 - Field, amount and currency rules follow each gateway's official documentation; test vectors are shared with `laranex/php-myanmar-payments`.
 - Standard library only; Go 1.22 or higher.
+- Agent skill in `skills/go-myanmar-payments` so coding agents (Claude Code, Codex, Cursor and others) integrate the module correctly; install it with `npx skills add laranex/go-myanmar-payments`.
