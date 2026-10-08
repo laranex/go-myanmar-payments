@@ -167,9 +167,36 @@ func TestEveryDocumentedCallbackStatusIsMapped(t *testing.T) {
 }
 
 func TestOrderIDFallsBackToMerchantReferenceID(t *testing.T) {
-	callback, err := newGateway(t, nil).HandleCallback(signedCallback(t, map[string]any{"status": "PAYMENT_CONFIRMED", "merchantReferenceId": "ref-001", "amount": "1000"}, "test-secret"))
-	if err != nil || callback.OrderID != "ref-001" {
-		t.Fatalf("got %+v %v", callback, err)
+	cases := map[string]map[string]any{
+		"missing": {},
+		"null":    {"orderId": nil},
+		"empty":   {"orderId": ""},
+	}
+	for name, extra := range cases {
+		t.Run(name, func(t *testing.T) {
+			payload := map[string]any{"status": "PAYMENT_CONFIRMED", "merchantReferenceId": "ref-001", "amount": "1000"}
+			for key, value := range extra {
+				payload[key] = value
+			}
+			callback, err := newGateway(t, nil).HandleCallback(signedCallback(t, payload, "test-secret"))
+			if err != nil || callback.OrderID != "ref-001" {
+				t.Fatalf("got %+v %v", callback, err)
+			}
+		})
+	}
+}
+
+func TestInitiateLeavesInvalidDataUntouched(t *testing.T) {
+	data := paymentData()
+	data.MerchantReferenceID = ""
+	data.CallbackURL = "http://shop.test/cb"
+
+	var invalid *myanmarpayments.InvalidPaymentDataError
+	if _, err := newGateway(t, nil).Initiate(context.Background(), data); !errors.As(err, &invalid) {
+		t.Fatalf("expected InvalidPaymentDataError, got %v", err)
+	}
+	if data.MerchantReferenceID != "" {
+		t.Fatalf("MerchantReferenceID was set to %q on invalid data", data.MerchantReferenceID)
 	}
 }
 

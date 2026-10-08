@@ -52,13 +52,14 @@ func New(config Config, client myanmarpayments.HTTPDoer) (*Gateway, error) {
 func (g *Gateway) Config() Config { return g.config }
 
 // Initiate creates a payment request and returns Wave's page to redirect the customer to.
-// It fills data.MerchantReferenceID with a random id when empty, so store it afterwards.
+// Once data passes validation it fills data.MerchantReferenceID with a random id when empty, so
+// store it afterwards. Invalid data is returned untouched.
 func (g *Gateway) Initiate(ctx context.Context, data *PaymentData) (*myanmarpayments.RedirectPayment, error) {
-	if data.MerchantReferenceID == "" {
-		data.MerchantReferenceID = randomReference()
-	}
 	if err := data.Validate(); err != nil {
 		return nil, err
+	}
+	if data.MerchantReferenceID == "" {
+		data.MerchantReferenceID = randomReference()
 	}
 
 	amount := data.ResolvedAmount()
@@ -122,7 +123,8 @@ func (g *Gateway) Initiate(ctx context.Context, data *PaymentData) (*myanmarpaym
 }
 
 // HandleCallback verifies Wave's callback. Only PAYMENT_CONFIRMED means the customer paid.
-// OrderID falls back to merchantReferenceId because Wave marks orderId as optional.
+// OrderID falls back to merchantReferenceId when orderId is missing, null or empty, because Wave
+// marks orderId as optional.
 func (g *Gateway) HandleCallback(request *myanmarpayments.CallbackRequest) (*myanmarpayments.PaymentCallback, error) {
 	payload := request.ParsedBody()
 
