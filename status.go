@@ -13,11 +13,11 @@ const (
 	StatusPending PaymentStatus = "pending"
 	// StatusFailed means the payment was attempted and failed or was rejected.
 	StatusFailed PaymentStatus = "failed"
-	// StatusCancelled means the payment or order was cancelled or closed before completing.
+	// StatusCancelled means the payment or order was canceled or closed before completing.
 	StatusCancelled PaymentStatus = "cancelled"
 	// StatusExpired means the payment window ran out before the customer paid.
 	StatusExpired PaymentStatus = "expired"
-	// StatusUnknown means the gateway sent a status this package does not recognise.
+	// StatusUnknown means the gateway sent a status this package does not recognize.
 	StatusUnknown PaymentStatus = "unknown"
 )
 

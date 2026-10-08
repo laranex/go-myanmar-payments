@@ -182,7 +182,7 @@ func (g *Gateway) HandleCallback(request *myanmarpayments.CallbackRequest) (*mya
 }
 
 // VerifyRedirect verifies the signed query string AYA adds when it sends the customer back
-// to your return URL. Use it to show the right page; fulfil orders from the backend callback.
+// to your return URL. Use it to show the right page; fulfill orders from the backend callback.
 func (g *Gateway) VerifyRedirect(request *myanmarpayments.CallbackRequest) (*myanmarpayments.PaymentCallback, error) {
 	payload, err := g.verifiedPayload(request.QueryInput(), "redirect")
 	if err != nil {

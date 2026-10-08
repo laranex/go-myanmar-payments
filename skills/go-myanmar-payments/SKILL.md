@@ -38,13 +38,13 @@ Use this skill when a Go service takes payments through KBZ Pay, Wave Money, AYA
 
 - `request, err := myanmarpayments.NewCallbackRequestFromHTTP(r)` (`NewCallbackRequestFromJSON` to replay a stored payload)
 - `callback, err := gateway.HandleCallback(request)` verifies the signature; on failure `err` is `*SignatureVerificationError` (use `errors.As`); AYA's browser return is checked with `aya.VerifyRedirect(request)`
-- check `callback.Status` (`StatusSuccessful`, ...) or `IsSuccessful()`, compare `callback.Amount` with the order, make fulfilment idempotent (gateways retry)
+- check `callback.Status` (`StatusSuccessful`, ...) or `IsSuccessful()`, compare `callback.Amount` with the order, make fulfillment idempotent (gateways retry)
 - reply with `callback.Acknowledgement.Write(w)`
 
 ### 4. Check status and handle errors
 
 - `kbz.Status(ctx, orderID)`, `aya.Status(ctx, orderID)`, `yoma.Status(ctx, reference)` return `*PaymentStatusResult`
-- gateway failures return `*APIError` (`GatewayCode`, `GatewayMessage`, `HTTPStatus`, `Raw`; `Unwrap` exposes transport errors such as a cancelled `ctx`)
+- gateway failures return `*APIError` (`GatewayCode`, `GatewayMessage`, `HTTPStatus`, `Raw`; `Unwrap` exposes transport errors such as a canceled `ctx`)
 
 ## Gateway Gotchas
 
@@ -60,6 +60,6 @@ Use this skill when a Go service takes payments through KBZ Pay, Wave Money, AYA
 
 ## Anti-patterns
 
-- do not fulfil from return pages or query strings; fulfil from the verified callback or a status check
+- do not fulfill from return pages or query strings; fulfill from the verified callback or a status check
 - do not convert amounts through `float64` or treat `StatusPending` / `StatusUnknown` as paid
 - do not reuse a Wave `MerchantReferenceID` or re-run Yoma `Initiate` for the same order

@@ -42,7 +42,7 @@ http.Redirect(w, r, payment.URL, http.StatusFound)
 request, _ := myanmarpayments.NewCallbackRequestFromHTTP(r)
 callback, err := kbz.HandleCallback(request)
 if err == nil && callback.IsSuccessful() {
-	// compare callback.Amount with your order, then fulfil callback.OrderID
+	// compare callback.Amount with your order, then fulfill callback.OrderID
 }
 callback.Acknowledgement.Write(w) // KBZ Pay expects a plain "success"
 ```
