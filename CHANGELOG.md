@@ -2,11 +2,16 @@
 
 All notable changes to `go-myanmar-payments` will be documented in this file.
 
-## v0.1.0 - Unreleased
+## v4.0.0 - Unreleased
 
-- KBZ Pay (PWA, QR, In-App), Wave Money, AYA Payment Gateway, Yoma MMQR and CyberSource Secure Acceptance
-- One typed payment data struct per gateway and one result type per flow: `RedirectPayment`, `FormPayment`, `QrPayment`, `AppPayment`
-- Verified callbacks return `PaymentCallback` with a gateway-independent `PaymentStatus` and the acknowledgement each gateway expects
-- Status checks for KBZ Pay, AYA and Yoma MMQR return `PaymentStatusResult`
-- Exact `Amount` type (`Kyat`, `ParseAmount`, `MustParseAmount`) for every gateway, so amounts never pass through a float
-- Field, amount and currency rules follow each gateway's official documentation, shared test vectors with `laranex/php-myanmar-payments`
+Initial release. The version number matches the other Laranex packages (`php-myanmar-payments`, `laravel-myanmar-payments`), so the module path carries the major version: import `github.com/laranex/go-myanmar-payments/v4` and its sub-packages (`.../v4/kbzpay`, `.../v4/wavemoney`, `.../v4/ayapay`, `.../v4/yomammqr`, `.../v4/cybersource`).
+
+### Added
+- Gateways: KBZ Pay (`PWA`, `QR`, `App`, `Status`), Wave Money (`Initiate`), AYA Payment Gateway (`Services`, `Initiate`, `Status`, `VerifyRedirect`), Yoma MMQR (`Initiate`, `RenewQR`, `Status`, `ForgetToken`) and CyberSource Secure Acceptance (`Initiate`); every gateway validates its `PaymentData` and verifies callbacks with `HandleCallback`.
+- Exact `Amount` type (`Kyat`, `ParseAmount`, `MustParseAmount`) kept as decimal text, so amounts never pass through a float; JSON marshals as a string and unmarshals from a string or a number.
+- A `Config` struct per gateway plus `ConfigFromEnv(getenv)`, which reads the same `*_SANDBOX`, credential and URL variables as the PHP packages and reports missing values as `ConfigurationError`.
+- Result types: `RedirectPayment`, `FormPayment`, `QrPayment` and `AppPayment` for payment flows, `PaymentCallback` (with a gateway-independent `PaymentStatus` and the `Acknowledgement` each gateway expects) for verified callbacks, and `PaymentStatusResult` for status checks.
+- Typed errors: `InvalidPaymentDataError`, `APIError`, `SignatureVerificationError` and `ConfigurationError`.
+- `HTTPDoer` and `TokenCache` abstractions so any HTTP client or cache can be plugged in; `DefaultHTTPClient` and `MemoryTokenCache` ship with the module.
+- Field, amount and currency rules follow each gateway's official documentation; test vectors are shared with `laranex/php-myanmar-payments`.
+- Standard library only; Go 1.22 or higher.

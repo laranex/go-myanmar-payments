@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	myanmarpayments "github.com/laranex/go-myanmar-payments"
-	"github.com/laranex/go-myanmar-payments/internal/testutil"
+	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
+	"github.com/laranex/go-myanmar-payments/v4/internal/testutil"
 )
 
 func newGateway(t *testing.T, server *testutil.Server) *Gateway {

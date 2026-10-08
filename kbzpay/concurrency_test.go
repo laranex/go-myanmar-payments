@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	myanmarpayments "github.com/laranex/go-myanmar-payments"
+	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
 )
 
 func TestStatusReportsContextDeadlineExceeded(t *testing.T) {

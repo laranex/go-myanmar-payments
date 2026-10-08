@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	myanmarpayments "github.com/laranex/go-myanmar-payments"
+	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
 )
 
 func newGateway(t *testing.T) *Gateway {

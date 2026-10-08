@@ -7,8 +7,8 @@ import (
 	"math/big"
 	"net/url"
 
-	myanmarpayments "github.com/laranex/go-myanmar-payments"
-	"github.com/laranex/go-myanmar-payments/internal/validate"
+	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
+	"github.com/laranex/go-myanmar-payments/v4/internal/validate"
 )
 
 // Item is a line item shown on Wave's payment page.

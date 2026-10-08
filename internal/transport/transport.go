@@ -11,7 +11,7 @@ import (
 	"net/url"
 	"strings"
 
-	myanmarpayments "github.com/laranex/go-myanmar-payments"
+	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
 )
 
 // Client posts requests through an HTTPDoer.

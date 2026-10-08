@@ -3,8 +3,8 @@ package cybersource
 import (
 	"regexp"
 
-	myanmarpayments "github.com/laranex/go-myanmar-payments"
-	"github.com/laranex/go-myanmar-payments/internal/validate"
+	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
+	"github.com/laranex/go-myanmar-payments/v4/internal/validate"
 )
 
 // TransactionType is what CyberSource does with the card.

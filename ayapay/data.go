@@ -1,8 +1,8 @@
 package ayapay
 
 import (
-	myanmarpayments "github.com/laranex/go-myanmar-payments"
-	"github.com/laranex/go-myanmar-payments/internal/validate"
+	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
+	"github.com/laranex/go-myanmar-payments/v4/internal/validate"
 )
 
 // Method is how the customer pays through the chosen channel. Services lists the methods

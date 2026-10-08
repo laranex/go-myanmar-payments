@@ -2,7 +2,7 @@
 package env
 
 import (
-	myanmarpayments "github.com/laranex/go-myanmar-payments"
+	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
 	"strconv"
 	"strings"
 )
