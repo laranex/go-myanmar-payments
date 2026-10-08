@@ -1,0 +1,140 @@
+name: release
+
+# Pushing a version tag (v4.0.0, v4.0.0-dev.1, ...) releases the module: the
+# test suite runs, the GitHub release is created from the matching CHANGELOG.md
+# section, and the Go module proxy is asked for the new version so pkg.go.dev
+# lists it.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      prerelease: ${{ steps.tag.outputs.prerelease }}
+      module: ${{ steps.tag.outputs.module }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate the tag
+        id: tag
+        run: |
+          semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+          if [[ ! "$GITHUB_REF_NAME" =~ $semver ]]; then
+            echo "::error::Tag '$GITHUB_REF_NAME' is not a semantic version (expected vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-PRERELEASE)."
+            exit 1
+          fi
+
+          # The tag's major version must match the module path's /vN suffix.
+          module="$(awk '$1 == "module" { print $2; exit }' go.mod)"
+          if [[ "$module" =~ /v([0-9]+)$ ]]; then
+            major="${BASH_REMATCH[1]}"
+            if [[ "$GITHUB_REF_NAME" != "v$major."* ]]; then
+              echo "::error::Tag '$GITHUB_REF_NAME' does not match the module path $module: the tag must start with v$major."
+              exit 1
+            fi
+          elif [[ ! "$GITHUB_REF_NAME" =~ ^v[01]\. ]]; then
+            echo "::error::Tag '$GITHUB_REF_NAME' needs a /vN suffix on the module path $module."
+            exit 1
+          fi
+
+          version="${GITHUB_REF_NAME#v}"
+          prerelease=false
+          [[ "${version%%+*}" == *-* ]] && prerelease=true
+
+          {
+            echo "version=$version"
+            echo "prerelease=$prerelease"
+            echo "module=$module"
+          } >> "$GITHUB_OUTPUT"
+          echo "Releasing $module@$GITHUB_REF_NAME (prerelease: $prerelease)"
+
+  tests:
+    name: Tests
+    uses: ./.github/workflows/tests.yml
+
+  release:
+    name: Release
+    needs: [validate, tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.validate.outputs.version }}
+          PRERELEASE: ${{ needs.validate.outputs.prerelease }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            echo "The $GITHUB_REF_NAME release already exists; skipping."
+            exit 0
+          fi
+
+          # Release notes: the CHANGELOG.md section whose heading is "## v1.2.3" or
+          # "## v1.2.3 - <date>", up to the next "## " heading.
+          notes="$RUNNER_TEMP/release-notes.md"
+          if [[ -f CHANGELOG.md ]]; then
+            awk -v tag="$GITHUB_REF_NAME" -v version="$VERSION" '
+              /^## / { if (found) exit; found = ($2 == tag || $2 == version); next }
+              found { print }
+            ' CHANGELOG.md > "$notes"
+          fi
+
+          args=(--verify-tag --title "$GITHUB_REF_NAME")
+          if [[ -f "$notes" ]] && grep -q '[^[:space:]]' "$notes"; then
+            args+=(--notes-file "$notes")
+          else
+            echo "::warning::CHANGELOG.md has no '## $GITHUB_REF_NAME' section; using generated release notes."
+            args+=(--generate-notes)
+          fi
+          [[ "$PRERELEASE" == true ]] && args+=(--prerelease)
+
+          gh release create "$GITHUB_REF_NAME" "${args[@]}"
+
+      - name: Warm the Go module proxy
+        env:
+          MODULE: ${{ needs.validate.outputs.module }}
+          PRIVATE: ${{ github.event.repository.private }}
+        working-directory: ${{ runner.temp }}
+        run: |
+          # proxy.golang.org (and so pkg.go.dev) can only fetch public repositories.
+          if [[ "$PRIVATE" == true ]]; then
+            echo "::notice::The repository is private; skipping the Go module proxy."
+            exit 0
+          fi
+
+          for attempt in 1 2 3 4 5; do
+            if GOPROXY=https://proxy.golang.org go list -m "$MODULE@$GITHUB_REF_NAME"; then
+              exit 0
+            fi
+            echo "Attempt $attempt failed; retrying in 30 seconds."
+            sleep 30
+          done
+
+          echo "::error::proxy.golang.org could not resolve $MODULE@$GITHUB_REF_NAME."
+          exit 1
