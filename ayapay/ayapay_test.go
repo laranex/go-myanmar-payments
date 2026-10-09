@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"net/url"
 	"strconv"
@@ -234,4 +235,30 @@ func TestValidationFollowsAYARules(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestVerifyRedirectAcceptsAPlusThatArrivedAsASpace(t *testing.T) {
+	for i := 0; i < 256; i++ {
+		description := fmt.Sprintf("Order ~%d>?", i)
+		payload := map[string]any{"merchOrderId": "ORD123456", "amount": "1000", "statusCode": "00", "description": description}
+		body := signed(t, payload, "ORD123456:1000:00:"+description)
+		encoded := body["payload"].(string)
+		if !strings.Contains(encoded, "+") {
+			continue
+		}
+
+		// An unencoded "+" in the query string is decoded as a space.
+		query, _ := url.ParseQuery("payload=" + encoded + "&checkSum=" + body["checkSum"].(string))
+		callback, err := newGateway(t, nil).VerifyRedirect(myanmarpayments.NewCallbackRequest(nil, nil, query))
+		if err != nil || !callback.IsSuccessful() || callback.Raw["description"] != description {
+			t.Fatalf("got %+v %v", callback, err)
+		}
+
+		query.Set("checkSum", hmacHex("ORD123456:1:00:"+description, "test-secret"))
+		if _, err := newGateway(t, nil).VerifyRedirect(myanmarpayments.NewCallbackRequest(nil, nil, query)); err == nil {
+			t.Fatal("expected the checksum to still be verified")
+		}
+		return
+	}
+	t.Fatal("no payload with a + in its base64 encoding")
 }
