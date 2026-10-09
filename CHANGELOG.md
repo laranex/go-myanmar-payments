@@ -14,6 +14,7 @@ Initial release. The version number matches the other Laranex packages (`php-mya
 - Callback, return and cancel URLs only need to be valid absolute http or https URLs; there is no HTTPS-only or port-443 rule (gateways may still require HTTPS in production).
 - Wave Money's sandbox is `https://preprodpayments.wavemoney.io:8107` (`wavemoney.SandboxURL`), with checkout at `https://preprodpayments.wavemoney.io/authenticate` (`wavemoney.SandboxAuthenticateURL`).
 - Wave Money: `Initiate` validates `PaymentData` before filling an empty `MerchantReferenceID`, so invalid data is returned untouched; callbacks fall back to `merchantReferenceId` for the order id when `orderId` is missing, null or empty (same rule as `php-myanmar-payments`).
+- CyberSource callbacks only trust signed fields: `decision` and `req_reference_number` must be listed in `signed_field_names`, and the amount and `transaction_id` are read only when signed, so the signed request form cannot be replayed as a payment result.
 - Typed errors: `InvalidPaymentDataError`, `APIError`, `SignatureVerificationError` and `ConfigurationError`.
 - `HTTPDoer` and `TokenCache` abstractions so any HTTP client or cache can be plugged in; `DefaultHTTPClient` and `MemoryTokenCache` ship with the module.
 - Field, amount and currency rules follow each gateway's official documentation; test vectors are shared with `laranex/php-myanmar-payments`.
