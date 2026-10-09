@@ -21,6 +21,12 @@ const (
 	StatusUnknown PaymentStatus = "unknown"
 )
 
+// PaymentStatuses returns every PaymentStatus, in the order successful, pending, failed,
+// canceled, expired and unknown.
+func PaymentStatuses() []PaymentStatus {
+	return []PaymentStatus{StatusSuccessful, StatusPending, StatusFailed, StatusCanceled, StatusExpired, StatusUnknown}
+}
+
 // IsFinal reports whether the status will not change any more.
 func (s PaymentStatus) IsFinal() bool {
 	return s != StatusPending && s != StatusUnknown

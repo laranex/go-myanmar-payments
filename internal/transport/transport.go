@@ -52,7 +52,7 @@ func (c *Client) PostJSON(ctx context.Context, endpoint string, data any, header
 	encoder := json.NewEncoder(&body)
 	encoder.SetEscapeHTML(false)
 	if err := encoder.Encode(data); err != nil {
-		return Response{}, fmt.Errorf("myanmarpayments: encode request: %w", err)
+		return Response{}, fmt.Errorf("myanmarpayments: Could not encode the request: %w", err)
 	}
 
 	return c.post(ctx, endpoint, bytes.TrimRight(body.Bytes(), "\n"), merge(map[string]string{
@@ -72,7 +72,7 @@ func (c *Client) PostForm(ctx context.Context, endpoint string, data url.Values,
 func (c *Client) post(ctx context.Context, endpoint string, body []byte, headers map[string]string) (Response, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return Response{}, &myanmarpayments.APIError{Message: fmt.Sprintf("could not build request to %s: %v", endpoint, err), Err: err}
+		return Response{}, &myanmarpayments.APIError{Message: fmt.Sprintf("Could not build request to %s: %v", endpoint, err), Err: err}
 	}
 	for name, value := range headers {
 		request.Header.Set(name, value)
@@ -80,13 +80,13 @@ func (c *Client) post(ctx context.Context, endpoint string, body []byte, headers
 
 	response, err := c.Doer.Do(request)
 	if err != nil {
-		return Response{}, &myanmarpayments.APIError{Message: fmt.Sprintf("could not reach %s: %v", endpoint, err), Err: err}
+		return Response{}, &myanmarpayments.APIError{Message: fmt.Sprintf("Could not reach %s: %v", endpoint, err), Err: err}
 	}
 	defer response.Body.Close()
 
 	responseBody, err := io.ReadAll(response.Body)
 	if err != nil {
-		return Response{}, &myanmarpayments.APIError{Message: fmt.Sprintf("could not read response from %s: %v", endpoint, err), HTTPStatus: response.StatusCode, Err: err}
+		return Response{}, &myanmarpayments.APIError{Message: fmt.Sprintf("Could not read response from %s: %v", endpoint, err), HTTPStatus: response.StatusCode, Err: err}
 	}
 
 	return Response{Status: response.StatusCode, Body: responseBody}, nil

@@ -6,6 +6,17 @@ import (
 	"strings"
 )
 
+// PaymentError is implemented by every error this module returns for a payment problem:
+// *InvalidPaymentDataError, *APIError, *SignatureVerificationError and *ConfigurationError.
+// Match any of them with
+//
+//	var paymentErr myanmarpayments.PaymentError
+//	if errors.As(err, &paymentErr) { ... }
+type PaymentError interface {
+	error
+	paymentError()
+}
+
 // InvalidPaymentDataError is returned when payment data has values the gateway would reject.
 type InvalidPaymentDataError struct {
 	// Errors maps a field name to its error message.
@@ -24,7 +35,7 @@ func (e *InvalidPaymentDataError) Error() string {
 		messages = append(messages, e.Errors[field])
 	}
 
-	return "myanmarpayments: invalid payment data: " + strings.Join(messages, " ")
+	return "myanmarpayments: Invalid payment data: " + strings.Join(messages, " ")
 }
 
 // APIError is returned when a gateway rejects a request or answers with an error,
@@ -66,5 +77,10 @@ type ConfigurationError struct {
 }
 
 func (e *ConfigurationError) Error() string {
-	return fmt.Sprintf("myanmarpayments: the %s configuration is missing [%s]", e.Gateway, e.Key)
+	return fmt.Sprintf("myanmarpayments: The %s configuration is missing [%s].", e.Gateway, e.Key)
 }
+
+func (*InvalidPaymentDataError) paymentError()    {}
+func (*APIError) paymentError()                   {}
+func (*SignatureVerificationError) paymentError() {}
+func (*ConfigurationError) paymentError()         {}

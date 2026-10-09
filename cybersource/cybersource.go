@@ -78,7 +78,7 @@ func (g *Gateway) Initiate(data PaymentData) (*myanmarpayments.FormPayment, erro
 	signature, _ := g.sign(signable)
 	fields = append(fields, myanmarpayments.FormField{Name: "signature", Value: signature})
 
-	return &myanmarpayments.FormPayment{OrderID: data.OrderID, Action: g.config.ResolvedBaseURL() + "/pay", Fields: fields}, nil
+	return &myanmarpayments.FormPayment{OrderID: data.OrderID, Action: g.config.ResolvedBaseURL() + "/pay", Fields: fields, Enctype: "application/x-www-form-urlencoded"}, nil
 }
 
 // HandleCallback verifies CyberSource's result post. The same check works for the browser post

@@ -80,7 +80,7 @@ func (g *Gateway) Initiate(ctx context.Context, data *PaymentData) (*myanmarpaym
 	encoder := json.NewEncoder(&encoded)
 	encoder.SetEscapeHTML(false)
 	if err := encoder.Encode(wireItems); err != nil {
-		return nil, fmt.Errorf("myanmarpayments: encode items: %w", err)
+		return nil, fmt.Errorf("myanmarpayments: Could not encode the items: %w", err)
 	}
 	items := bytes.TrimRight(encoded.Bytes(), "\n")
 

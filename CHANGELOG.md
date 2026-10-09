@@ -34,4 +34,9 @@ Initial release. The version number matches the other Laranex packages (`php-mya
   - Wave Money's `items` JSON no longer HTML-escapes `<`, `>` and `&` in item names.
   - A callback body is read as JSON only when it is a single JSON object; a malformed pair in a urlencoded body is skipped instead of discarding the whole form.
   - `APIError` messages no longer end with a space when the gateway sends a code without a message.
+  - Error texts match the other SDKs after the `myanmarpayments: ` prefix: `Invalid payment data: ...`, `The kbz_pay configuration is missing [app_id].`, `Could not reach <url>: ...`.
+  - New `payments` package, the facade of the other SDKs: `payments.New(payments.Config{...}, payments.Options{...})` and `payments.FromEnv(getenv, options)` build each gateway (`KBZPay()`, `WaveMoney()`, `AYAPay()`, `YomaMMQR()`, `CyberSource()`) once, on first use, and are safe for concurrent use; a gateway without configuration returns a `ConfigurationError`.
+  - New `PaymentError` interface implemented by all four error types, and `PaymentStatuses()` listing every status.
+  - CyberSource's `FormPayment.Enctype` is `application/x-www-form-urlencoded` (was empty, which `HTML` already treated the same way).
+  - Yoma MMQR: concurrent calls share one in-flight token request; a caller whose context ends stops waiting without failing the others.
 - `StatusCancelled` is renamed to `StatusCanceled` and its value from `"cancelled"` to `"canceled"` (American English), with no alias. Code or stored statuses from `v4.0.0-alpha.1` need the new name; gateway status literals such as Wave Money's `PAYMENT_REQUEST_CANCELLED` are unchanged.

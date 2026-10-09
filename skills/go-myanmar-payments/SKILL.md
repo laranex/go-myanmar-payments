@@ -33,6 +33,7 @@ kbz, err := kbzpay.New(kbzpay.ConfigFromEnv(os.Getenv), nil)
 - `client` is any `myanmarpayments.HTTPDoer` (`*http.Client` works; nil uses `DefaultHTTPClient()`)
 - `cache` is any `myanmarpayments.TokenCache` for the Yoma access token (nil uses `NewMemoryTokenCache()`; share a Redis-backed one across processes)
 - a missing credential returns `*myanmarpayments.ConfigurationError`
+- or build every gateway from one place with `payments.FromEnv(os.Getenv, payments.Options{HTTPClient: client, TokenCache: cache})` (or `payments.New(payments.Config{KBZPay: &cfg}, opts)`) and call `KBZPay()`, `WaveMoney()`, `AYAPay()`, `YomaMMQR()` or `CyberSource()`; each gateway is built once on first use
 
 ## Use
 
@@ -94,7 +95,7 @@ Check AYA's browser return with `aya.VerifyRedirect(request)`.
 
 - `kbz.Status(ctx, orderID)`, `aya.Status(ctx, orderID)` and `yoma.Status(ctx, reference)` return `*PaymentStatusResult` with `Status` and `IsSuccessful()`.
 - Statuses are `StatusSuccessful`, `StatusPending`, `StatusFailed`, `StatusCanceled`, `StatusExpired` and `StatusUnknown`.
-- Gateway failures return `*APIError` (`GatewayCode`, `GatewayMessage`, `HTTPStatus`, `Raw`); `Unwrap` exposes transport errors such as a canceled `ctx`.
+- Gateway failures return `*APIError` (`GatewayCode`, `GatewayMessage`, `HTTPStatus`, `Raw`); `Unwrap` exposes transport errors such as a canceled `ctx`. Every package error implements `myanmarpayments.PaymentError`.
 
 ## Test your app
 

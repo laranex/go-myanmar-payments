@@ -44,7 +44,7 @@ func NewCallbackRequestFromHTTP(r *http.Request) (*CallbackRequest, error) {
 		var err error
 		body, err = io.ReadAll(r.Body)
 		if err != nil {
-			return nil, fmt.Errorf("myanmarpayments: read callback body: %w", err)
+			return nil, fmt.Errorf("myanmarpayments: Could not read the callback body: %w", err)
 		}
 		r.Body = io.NopCloser(bytes.NewReader(body))
 	}
@@ -57,7 +57,7 @@ func NewCallbackRequestFromHTTP(r *http.Request) (*CallbackRequest, error) {
 func NewCallbackRequestFromJSON(payload any, header http.Header) (*CallbackRequest, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("myanmarpayments: encode callback payload: %w", err)
+		return nil, fmt.Errorf("myanmarpayments: Could not encode the callback payload: %w", err)
 	}
 	if header == nil {
 		header = http.Header{}

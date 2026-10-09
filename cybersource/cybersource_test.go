@@ -63,6 +63,9 @@ func TestInitiateSignsTheHostedCheckoutFields(t *testing.T) {
 	if fields["signature"] != signature(fields) {
 		t.Fatal("signature mismatch")
 	}
+	if payment.Enctype != "application/x-www-form-urlencoded" {
+		t.Fatalf("unexpected enctype %q", payment.Enctype)
+	}
 }
 
 func TestDecimalAmountsAndOtherCurrencies(t *testing.T) {

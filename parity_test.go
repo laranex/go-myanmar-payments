@@ -3,7 +3,6 @@ package myanmarpayments_test
 import (
 	"errors"
 	"net/http"
-	"strings"
 	"testing"
 
 	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
@@ -190,10 +189,8 @@ func TestParityFormHTML(t *testing.T) {
 func TestParityMessages(t *testing.T) {
 	messages := testutil.Fixture(t, "parity/vectors.json")["messages"].(map[string]any)
 
-	// Go errors carry the package prefix and start in lowercase.
-	goStyle := func(message string) string {
-		return "myanmarpayments: " + strings.ToLower(message[:1]) + message[1:]
-	}
+	// Go errors carry the package prefix before the shared text.
+	goStyle := func(message string) string { return "myanmarpayments: " + message }
 
 	invalidData := messages["invalid_payment_data"].(map[string]any)
 	errs := map[string]string{}
@@ -206,7 +203,7 @@ func TestParityMessages(t *testing.T) {
 
 	configuration := messages["configuration"].(map[string]any)
 	configErr := &myanmarpayments.ConfigurationError{Gateway: configuration["gateway"].(string), Key: configuration["key"].(string)}
-	if got := configErr.Error(); got != strings.TrimSuffix(goStyle(configuration["message"].(string)), ".") {
+	if got := configErr.Error(); got != goStyle(configuration["message"].(string)) {
 		t.Errorf("configuration message %q", got)
 	}
 

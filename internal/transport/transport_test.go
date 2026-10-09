@@ -86,7 +86,7 @@ func TestPostJSONSendsACompactBodyWithoutHTMLEscaping(t *testing.T) {
 
 func TestPostJSONRejectsUnencodableData(t *testing.T) {
 	_, err := New(nil).PostJSON(context.Background(), "http://unused.test", map[string]any{"bad": make(chan int)}, nil)
-	if err == nil || !strings.Contains(err.Error(), "encode request") {
+	if err == nil || !strings.Contains(err.Error(), "Could not encode the request") {
 		t.Fatalf("err = %v, want an encode error", err)
 	}
 }
@@ -130,16 +130,16 @@ func TestNetworkFailuresBecomeAPIErrors(t *testing.T) {
 	if !errors.As(err, &apiErr) {
 		t.Fatalf("err = %T (%v), want *APIError", err, err)
 	}
-	if !strings.Contains(apiErr.Message, "could not reach") || apiErr.Err == nil {
-		t.Fatalf("APIError = %+v, want a 'could not reach' message wrapping the cause", *apiErr)
+	if !strings.Contains(apiErr.Message, "Could not reach") || apiErr.Err == nil {
+		t.Fatalf("APIError = %+v, want a 'Could not reach' message wrapping the cause", *apiErr)
 	}
 }
 
 func TestInvalidEndpointsBecomeAPIErrors(t *testing.T) {
 	_, err := New(nil).PostJSON(context.Background(), "://bad", map[string]any{}, nil)
 	var apiErr *myanmarpayments.APIError
-	if !errors.As(err, &apiErr) || !strings.Contains(apiErr.Message, "could not build request") {
-		t.Fatalf("err = %v, want a 'could not build request' APIError", err)
+	if !errors.As(err, &apiErr) || !strings.Contains(apiErr.Message, "Could not build request") {
+		t.Fatalf("err = %v, want a 'Could not build request' APIError", err)
 	}
 }
 
@@ -171,8 +171,8 @@ func TestUnreadableBodiesBecomeAPIErrorsWithTheStatus(t *testing.T) {
 	if !errors.As(err, &apiErr) {
 		t.Fatalf("err = %T, want *APIError", err)
 	}
-	if apiErr.HTTPStatus != http.StatusBadGateway || !strings.Contains(apiErr.Message, "could not read response") {
-		t.Fatalf("APIError = %+v, want status 502 and a 'could not read response' message", *apiErr)
+	if apiErr.HTTPStatus != http.StatusBadGateway || !strings.Contains(apiErr.Message, "Could not read response") {
+		t.Fatalf("APIError = %+v, want status 502 and a 'Could not read response' message", *apiErr)
 	}
 }
 
