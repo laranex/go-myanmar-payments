@@ -230,3 +230,33 @@ func TestYomaRejectsDecimalAndNonPositiveAmounts(t *testing.T) {
 		})
 	}
 }
+
+func TestUnconfirmedCheckoutAndMissingQRAreAPIErrors(t *testing.T) {
+	data := PaymentData{OrderID: "ORD-1", Amount: myanmarpayments.Kyat(1000), Description: "Order 1"}
+	var apiErr *myanmarpayments.APIError
+
+	server := testutil.NewServer(t, token("t"), testutil.Reply{Body: map[string]any{"checkOutStatus": false}})
+	if _, err := newGateway(t, server, nil).Initiate(context.Background(), data); !errors.As(err, &apiErr) || apiErr.Message != "Yoma MMQR did not confirm the checkout." {
+		t.Fatalf("unexpected error %v", err)
+	}
+
+	server = testutil.NewServer(t, token("t"), testutil.Reply{Body: map[string]any{"qrString": "", "refLabel": "1"}})
+	if _, err := newGateway(t, server, nil).RenewQR(context.Background(), "ORD-1"); !errors.As(err, &apiErr) || apiErr.Message != "Yoma MMQR did not return a QR." {
+		t.Fatalf("unexpected error %v", err)
+	}
+
+	var invalid *myanmarpayments.InvalidPaymentDataError
+	if _, err := newGateway(t, nil, nil).Initiate(context.Background(), PaymentData{}); !errors.As(err, &invalid) {
+		t.Fatalf("expected InvalidPaymentDataError, got %v", err)
+	}
+}
+
+func TestFailedTokenRequestIsAnAPIError(t *testing.T) {
+	server := testutil.NewServer(t, testutil.Reply{Status: http.StatusUnauthorized, Body: map[string]any{"error": "invalid_client", "error_description": "Client authentication failed"}})
+
+	_, err := newGateway(t, server, nil).Status(context.Background(), "1")
+	var apiErr *myanmarpayments.APIError
+	if !errors.As(err, &apiErr) || apiErr.GatewayCode != "invalid_client" || apiErr.GatewayMessage != "Client authentication failed" || apiErr.HTTPStatus != http.StatusUnauthorized {
+		t.Fatalf("unexpected error %v", err)
+	}
+}
