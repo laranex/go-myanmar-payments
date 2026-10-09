@@ -270,3 +270,31 @@ func TestKBZAmountErrorsNameTheGateway(t *testing.T) {
 		t.Fatalf("unexpected error %v", err)
 	}
 }
+
+func TestQRExpiresWithTheTimeoutAndNeedsAQRCode(t *testing.T) {
+	withTimeout := data
+	withTimeout.TimeoutMinutes = 15
+	payment, err := newGateway(t, testutil.NewServer(t, precreate(map[string]any{"qrCode": "kbzpay://qr/abc"}))).QR(context.Background(), withTimeout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !payment.ExpiresAt.Equal(time.Unix(1536637503, 0).Add(15*time.Minute)) || payment.Reference != "PREPAY123" {
+		t.Fatalf("unexpected payment %+v", payment)
+	}
+
+	var apiErr *myanmarpayments.APIError
+	if _, err := newGateway(t, testutil.NewServer(t, precreate(nil))).QR(context.Background(), data); !errors.As(err, &apiErr) {
+		t.Fatalf("expected APIError without a qrCode, got %v", err)
+	}
+}
+
+func TestMissingPrepayIDAndInvalidDataAreErrors(t *testing.T) {
+	var apiErr *myanmarpayments.APIError
+	if _, err := newGateway(t, testutil.NewServer(t, precreate(map[string]any{"prepay_id": ""}))).App(context.Background(), data); !errors.As(err, &apiErr) {
+		t.Fatalf("expected APIError without a prepay_id, got %v", err)
+	}
+	var invalid *myanmarpayments.InvalidPaymentDataError
+	if _, err := newGateway(t, nil).QR(context.Background(), PaymentData{}); !errors.As(err, &invalid) {
+		t.Fatalf("expected InvalidPaymentDataError, got %v", err)
+	}
+}
