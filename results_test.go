@@ -137,3 +137,26 @@ func TestMemoryTokenCacheDeleteAndNoExpiry(t *testing.T) {
 		t.Fatal("unexpected value")
 	}
 }
+
+func TestFormPaymentHTMLEscapesOnlyTheFiveHTMLCharacters(t *testing.T) {
+	payment := FormPayment{Action: "https://pay.test/", Fields: []FormField{{Name: "n", Value: "a\x00b <&>\"'"}}}
+	if !strings.Contains(payment.HTML(), `value="a`+"\x00"+`b &lt;&amp;&gt;&#34;&#39;"`) {
+		t.Fatalf("unexpected html %s", payment.HTML())
+	}
+}
+
+func TestMalformedFormPairIsSkippedNotTheWholeBody(t *testing.T) {
+	request := NewCallbackRequest([]byte("decision=ACCEPT&bad=%zz&amount=10.50"), nil, nil)
+	body := request.ParsedBody()
+	if body["decision"] != "ACCEPT" || body["amount"] != "10.50" {
+		t.Fatalf("unexpected body %v", body)
+	}
+}
+
+func TestOnlyAJSONObjectBodyIsReadAsJSON(t *testing.T) {
+	for _, raw := range []string{`["a"]`, `{"a":"b"} trailing`} {
+		if _, ok := NewCallbackRequest([]byte(raw), nil, nil).ParsedBody()["a"]; ok {
+			t.Fatalf("%q should not decode as a JSON object", raw)
+		}
+	}
+}

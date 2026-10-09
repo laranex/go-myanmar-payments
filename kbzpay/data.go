@@ -23,8 +23,9 @@ type PaymentData struct {
 	CallbackURL string
 	// Title is the product name shown to the customer (optional).
 	Title string
-	// TimeoutMinutes is how long the order stays payable, 1 to 120 (optional; KBZ defaults to 120).
-	TimeoutMinutes int
+	// TimeoutMinutes is how long the order stays payable, 1 to 120 minutes (optional; nil means
+	// KBZ's default of 120). A value outside 1 to 120, including 0, is rejected.
+	TimeoutMinutes *int
 	// CallbackInfo is free text KBZ sends back unchanged in the callback (optional).
 	CallbackInfo string
 }
@@ -41,7 +42,6 @@ func (d PaymentData) Validate() error {
 		Max("callbackUrl", d.CallbackURL, 512).
 		When(strings.Contains(d.CallbackURL, "?"), "callbackUrl", "The callbackUrl field must not contain a query string.").
 		Between("timeoutMinutes", d.TimeoutMinutes, 1, 120).
-		When(d.TimeoutMinutes < 0, "timeoutMinutes", "The timeoutMinutes field must be between 1 and 120.").
 		Max("callbackInfo", url.QueryEscape(d.CallbackInfo), 512).
 		Err()
 }

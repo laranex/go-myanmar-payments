@@ -84,6 +84,38 @@ func (a Amount) DecimalPlaces() int {
 	return len(fraction)
 }
 
+// WholePart returns the digits before the decimal point, e.g. "1000" for "1000.50".
+// It is empty for the zero value.
+func (a Amount) WholePart() string {
+	whole, _, _ := strings.Cut(a.value, ".")
+	return whole
+}
+
+// Equals reports whether text is the same amount, compared by value: leading zeros of the whole
+// part and trailing zeros of the fraction are ignored, so "01000", "1000" and "1000.00" are equal.
+// Text that is not plain digits with an optional fraction (e.g. "1,000" or " 1000") is never
+// equal, and neither is an unset or invalid amount. Use it to compare a callback's Amount with
+// your order.
+func (a Amount) Equals(text string) bool {
+	if !a.Valid() || !amountPattern.MatchString(text) {
+		return false
+	}
+	return normalizeAmount(a.value) == normalizeAmount(text)
+}
+
+func normalizeAmount(value string) string {
+	whole, fraction, _ := strings.Cut(value, ".")
+	whole = strings.TrimLeft(whole, "0")
+	if whole == "" {
+		whole = "0"
+	}
+	fraction = strings.TrimRight(fraction, "0")
+	if fraction == "" {
+		return whole
+	}
+	return whole + "." + fraction
+}
+
 // IsZero reports whether the amount is a valid zero, e.g. "0" or "0.00".
 func (a Amount) IsZero() bool {
 	return a.Valid() && strings.Trim(strings.ReplaceAll(a.value, ".", ""), "0") == ""

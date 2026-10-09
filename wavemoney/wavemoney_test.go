@@ -278,3 +278,39 @@ func TestItemTotalIsExactBeyondInt64(t *testing.T) {
 		t.Fatal("a decimal item must leave the total unset")
 	}
 }
+
+func TestItemNamesAreNotHTMLEscaped(t *testing.T) {
+	server := testutil.NewServer(t, testutil.Reply{Body: map[string]any{"message": "success", "transaction_id": "T1"}})
+	data := paymentData()
+	data.Items = []Item{{Name: "Tea & <Cake>", Amount: myanmarpayments.Kyat(1000)}}
+	data.Amount = myanmarpayments.Amount{}
+	if _, err := newGateway(t, server).Initiate(context.Background(), data); err != nil {
+		t.Fatal(err)
+	}
+	form, _ := url.ParseQuery(string(server.Last(t).Body))
+	if form.Get("items") != `[{"name":"Tea & <Cake>","amount":1000}]` {
+		t.Fatalf("unexpected items %s", form.Get("items"))
+	}
+}
+
+func TestNestedHashedFieldFailsVerification(t *testing.T) {
+	payload := map[string]any{"status": "PAYMENT_CONFIRMED", "orderId": "100", "requestTime": map[string]any{"at": "now"}}
+	parts := ""
+	for _, field := range callbackFields {
+		value, ok := values.String(payload[field])
+		if !ok {
+			value = "null"
+		}
+		parts += value
+	}
+	payload["hashValue"] = hmacHex(parts, "test-secret")
+	request, err := myanmarpayments.NewCallbackRequestFromJSON(payload, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = newGateway(t, nil).HandleCallback(request)
+	var sigErr *myanmarpayments.SignatureVerificationError
+	if !errors.As(err, &sigErr) {
+		t.Fatalf("expected SignatureVerificationError, got %v", err)
+	}
+}

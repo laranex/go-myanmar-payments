@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/laranex/go-myanmar-payments/v4/internal/values"
 )
 
 // CallbackRequest is an incoming request from a gateway (a server callback or a browser
@@ -72,17 +74,12 @@ func (r *CallbackRequest) ParsedBody() map[string]any {
 		return map[string]any{}
 	}
 
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.UseNumber()
-	var decoded map[string]any
-	if err := decoder.Decode(&decoded); err == nil && decoded != nil {
+	if decoded, ok := values.DecodeObject(body); ok {
 		return decoded
 	}
 
-	form, err := url.ParseQuery(string(body))
-	if err != nil {
-		return map[string]any{}
-	}
+	// A malformed pair (e.g. a bad percent escape) is skipped; the other pairs are kept.
+	form, _ := url.ParseQuery(string(body))
 
 	return valuesToMap(form)
 }

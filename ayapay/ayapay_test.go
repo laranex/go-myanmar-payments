@@ -262,3 +262,38 @@ func TestVerifyRedirectAcceptsAPlusThatArrivedAsASpace(t *testing.T) {
 	}
 	t.Fatal("no payload with a + in its base64 encoding")
 }
+
+func TestDecodeBase64AcceptsPaddedOrUnpaddedStandardBase64Only(t *testing.T) {
+	cases := map[string]bool{
+		"eyJhIjoxfQ==": true, "eyJhIjoxfQ": true, "YWJj": true, "YWI=": true, "YWI": true,
+		"eyJhIjoxfQ=": false, "eyJhIjoxfQ===": false, "YWJj=": false, "Y": false, "": false, "==": false,
+		"YW=Jj": false, "YW-_": false, "YWJj\nZA==": false, "YWJj ZA==": false,
+	}
+	for input, valid := range cases {
+		if _, ok := decodeBase64(input); ok != valid {
+			t.Errorf("decodeBase64(%q) ok = %v, want %v", input, ok, valid)
+		}
+	}
+}
+
+func TestAPIErrorWithoutAMessageHasNoTrailingSpace(t *testing.T) {
+	server := testutil.NewServer(t, testutil.Reply{Body: map[string]any{"status": "09"}})
+	_, err := newGateway(t, server).Status(context.Background(), "ORDER123")
+	var apiErr *myanmarpayments.APIError
+	if !errors.As(err, &apiErr) || apiErr.Message != "AYA Pay enquiry failed: [09]" {
+		t.Fatalf("unexpected error %#v", err)
+	}
+}
+
+func TestPayloadRulesFromTheSharedVectors(t *testing.T) {
+	vectors := testutil.Fixture(t, "parity/vectors.json")["callbacks"].(map[string]any)["aya_pay"].([]any)
+	for _, item := range vectors {
+		vector := item.(map[string]any)
+		t.Run(vector["name"].(string), func(t *testing.T) {
+			_, err := newGateway(t, nil).HandleCallback(myanmarpayments.NewCallbackRequest([]byte(vector["body"].(string)), nil, nil))
+			if valid := vector["expected"].(map[string]any)["valid"] == true; valid != (err == nil) {
+				t.Fatalf("valid = %v, got error %v", valid, err)
+			}
+		})
+	}
+}

@@ -3,17 +3,16 @@
 package ayapay
 
 import (
-	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
 	"github.com/laranex/go-myanmar-payments/v4/internal/transport"
@@ -211,14 +210,12 @@ func (g *Gateway) verifiedPayload(input map[string]any, context string) (map[str
 	encoded, checkSum := strings.ReplaceAll(values.Get(input, "payload"), " ", "+"), values.Get(input, "checkSum")
 	fail := &myanmarpayments.SignatureVerificationError{Message: fmt.Sprintf("AYA Pay %s checksum verification failed.", context), Raw: input}
 
-	raw, err := base64.StdEncoding.DecodeString(encoded)
-	if err != nil || encoded == "" {
+	raw, ok := decodeBase64(encoded)
+	if !ok || !utf8.Valid(raw) {
 		return nil, fail
 	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	var payload map[string]any
-	if err := decoder.Decode(&payload); err != nil || payload == nil {
+	payload, ok := values.DecodeObject(raw)
+	if !ok {
 		return nil, fail
 	}
 
@@ -234,6 +231,10 @@ func (g *Gateway) verifiedPayload(input map[string]any, context string) (map[str
 		if !present {
 			continue
 		}
+		// A nested value is never signed, so the payload is rejected rather than partly trusted.
+		if values.IsNested(value) {
+			return nil, fail
+		}
 		str, _ := values.String(value)
 		parts = append(parts, str)
 	}
@@ -242,6 +243,23 @@ func (g *Gateway) verifiedPayload(input map[string]any, context string) (map[str
 		return nil, fail
 	}
 	return payload, nil
+}
+
+// decodeBase64 decodes standard base64 (A-Z, a-z, 0-9, + and /) that is either correctly padded
+// or not padded at all. Partial or extra padding, the URL-safe alphabet and whitespace are rejected.
+func decodeBase64(encoded string) ([]byte, bool) {
+	trimmed := strings.TrimRight(encoded, "=")
+	padding := len(encoded) - len(trimmed)
+	if trimmed == "" || padding > 2 || (padding > 0 && len(encoded)%4 != 0) || len(trimmed)%4 == 1 {
+		return nil, false
+	}
+	for _, char := range trimmed {
+		if !(char >= 'A' && char <= 'Z' || char >= 'a' && char <= 'z' || char >= '0' && char <= '9' || char == '+' || char == '/') {
+			return nil, false
+		}
+	}
+	raw, err := base64.RawStdEncoding.DecodeString(trimmed)
+	return raw, err == nil
 }
 
 func (g *Gateway) checksum(parts ...string) string {
@@ -261,7 +279,7 @@ func (g *Gateway) post(ctx context.Context, endpoint string, data map[string]any
 		message := values.Get(body, "message")
 		text := fmt.Sprintf("AYA Pay %s failed with HTTP %d.", endpoint, response.Status)
 		if status != "" {
-			text = fmt.Sprintf("AYA Pay %s failed: [%s] %s", endpoint, status, message)
+			text = strings.TrimRight(fmt.Sprintf("AYA Pay %s failed: [%s] %s", endpoint, status, message), " ")
 		}
 		return nil, &myanmarpayments.APIError{Message: text, GatewayCode: status, GatewayMessage: message, HTTPStatus: response.Status, Raw: body}
 	}

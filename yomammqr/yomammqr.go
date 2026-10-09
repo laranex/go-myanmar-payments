@@ -138,7 +138,7 @@ func (g *Gateway) HandleCallback(request *myanmarpayments.CallbackRequest) (*mya
 	mac.Write([]byte("orderNumber=" + orderNumber + "&status=" + status))
 	expected := hex.EncodeToString(mac.Sum(nil))
 
-	if orderNumber == "" || !hmac.Equal([]byte(expected), []byte(strings.ToLower(values.Get(payload, "hashValue")))) {
+	if orderNumber == "" || values.IsNested(payload["status"]) || !hmac.Equal([]byte(expected), []byte(strings.ToLower(values.Get(payload, "hashValue")))) {
 		return nil, &myanmarpayments.SignatureVerificationError{Message: "Yoma MMQR callback hash verification failed.", Raw: payload}
 	}
 
@@ -205,8 +205,8 @@ func (g *Gateway) token(ctx context.Context) (string, error) {
 		return "", apiError("token", response.Status, body, values.Get(body, "error"))
 	}
 
-	expiresIn, err := strconv.Atoi(values.Get(body, "expires_in"))
-	if err != nil || expiresIn <= 0 {
+	expiresIn := leadingInt(values.Get(body, "expires_in"))
+	if expiresIn <= 0 {
 		expiresIn = 3600
 	}
 	ttl := time.Duration(expiresIn-60) * time.Second
@@ -220,7 +220,21 @@ func (g *Gateway) token(ctx context.Context) (string, error) {
 
 func (g *Gateway) tokenCacheKey() string {
 	sum := sha256.Sum256([]byte(g.config.ResolvedBaseURL() + "|" + g.config.ClientID))
-	return "go-myanmar-payments.yoma-mmqr.token." + hex.EncodeToString(sum[:])
+	return "myanmar-payments.yoma-mmqr.token." + hex.EncodeToString(sum[:])
+}
+
+// leadingInt reads the integer digits at the start of text, e.g. 28800 for "28800.0"; 0 when
+// there are none or they overflow.
+func leadingInt(text string) int {
+	end := 0
+	for end < len(text) && text[end] >= '0' && text[end] <= '9' {
+		end++
+	}
+	n, err := strconv.Atoi(text[:end])
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 func apiError(endpoint string, status int, body map[string]any, errorCode string) error {
@@ -230,7 +244,7 @@ func apiError(endpoint string, status int, body map[string]any, errorCode string
 	}
 	text := fmt.Sprintf("Yoma MMQR %s failed with HTTP %d.", endpoint, status)
 	if errorCode != "" {
-		text = fmt.Sprintf("Yoma MMQR %s failed: [%s] %s", endpoint, errorCode, message)
+		text = strings.TrimRight(fmt.Sprintf("Yoma MMQR %s failed: [%s] %s", endpoint, errorCode, message), " ")
 	}
 	return &myanmarpayments.APIError{Message: text, GatewayCode: errorCode, GatewayMessage: message, HTTPStatus: status, Raw: body}
 }

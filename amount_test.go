@@ -122,3 +122,34 @@ func TestAmountJSON(t *testing.T) {
 		t.Fatalf("round trip = %q, %v", roundTrip, err)
 	}
 }
+
+func TestWholePart(t *testing.T) {
+	for input, want := range map[string]string{"1000.50": "1000", "007.5": "7", "0": "0"} {
+		if got := MustParseAmount(input).WholePart(); got != want {
+			t.Errorf("WholePart(%s) = %q, want %q", input, got, want)
+		}
+	}
+	if (Amount{}).WholePart() != "" {
+		t.Error("the zero value has no whole part")
+	}
+}
+
+func TestEqualsComparesByValue(t *testing.T) {
+	amount := MustParseAmount("1000.50")
+	for _, other := range []string{"1000.50", "1000.5", "01000.500"} {
+		if !amount.Equals(other) {
+			t.Errorf("%s should equal %q", amount, other)
+		}
+	}
+	for _, other := range []string{"1000", "1000.05", "1,000.50", "1000.50 ", "", "-1000.50"} {
+		if amount.Equals(other) {
+			t.Errorf("%s should not equal %q", amount, other)
+		}
+	}
+	if (Amount{}).Equals("0") || Kyat(-1).Equals("-1") {
+		t.Error("an unset or invalid amount never equals")
+	}
+	if !Kyat(1000).Equals(MustParseAmount("1000.00").String()) {
+		t.Error("amounts compare through their text")
+	}
+}

@@ -56,9 +56,9 @@ func (v *Validator) Pattern(field, value string, pattern *regexp.Regexp, descrip
 	return v
 }
 
-// Between fails when value is set (non-zero) and outside [min, max].
-func (v *Validator) Between(field string, value, min, max int) *Validator {
-	if value != 0 && (value < min || value > max) {
+// Between fails when value is set (non-nil) and outside [min, max].
+func (v *Validator) Between(field string, value *int, min, max int) *Validator {
+	if value != nil && (*value < min || *value > max) {
 		v.fail(field, fmt.Sprintf("The %s field must be between %d and %d.", field, min, max))
 	}
 	return v

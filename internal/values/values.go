@@ -2,10 +2,37 @@
 package values
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"strconv"
 	"strings"
 )
+
+// DecodeObject decodes data as one JSON object, keeping numbers as json.Number. It reports
+// false for anything else: invalid JSON, trailing data, or a JSON value that is not an object.
+func DecodeObject(data []byte) (map[string]any, bool) {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var decoded map[string]any
+	if err := decoder.Decode(&decoded); err != nil || decoded == nil {
+		return nil, false
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		return nil, false
+	}
+	return decoded, true
+}
+
+// IsNested reports whether v is a JSON object or array, which gateways never sign.
+func IsNested(v any) bool {
+	switch v.(type) {
+	case map[string]any, []any:
+		return true
+	default:
+		return false
+	}
+}
 
 // String returns v as a string. Maps, slices and nil report ok=false.
 func String(v any) (string, bool) {
