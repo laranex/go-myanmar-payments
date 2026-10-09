@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
@@ -37,6 +38,16 @@ type Gateway struct {
 	transport *transport.Client
 	cache     myanmarpayments.TokenCache
 	now       func() time.Time
+
+	mu       sync.Mutex
+	inflight *tokenCall
+}
+
+// tokenCall is a token request that concurrent callers share.
+type tokenCall struct {
+	done  chan struct{}
+	token string
+	err   error
 }
 
 // New returns a Gateway. A nil client uses myanmarpayments.DefaultHTTPClient and a nil cache
@@ -193,6 +204,36 @@ func (g *Gateway) token(ctx context.Context) (string, error) {
 		return token, nil
 	}
 
+	// Concurrent calls share one token request. It runs without any one caller's cancellation,
+	// so a caller that gives up does not fail the others (the HTTP client's timeout still
+	// applies); each caller still stops waiting when its own context ends.
+	g.mu.Lock()
+	call := g.inflight
+	if call == nil {
+		call = &tokenCall{done: make(chan struct{})}
+		g.inflight = call
+		go func() {
+			call.token, call.err = g.fetchToken(context.WithoutCancel(ctx))
+			g.mu.Lock()
+			g.inflight = nil
+			g.mu.Unlock()
+			close(call.done)
+		}()
+	}
+	g.mu.Unlock()
+
+	select {
+	case <-call.done:
+		return call.token, call.err
+	case <-ctx.Done():
+		return "", &myanmarpayments.APIError{
+			Message: fmt.Sprintf("Could not reach %s/token: %v", g.config.ResolvedBaseURL(), ctx.Err()),
+			Err:     ctx.Err(),
+		}
+	}
+}
+
+func (g *Gateway) fetchToken(ctx context.Context) (string, error) {
 	credentials := base64.StdEncoding.EncodeToString([]byte(g.config.ClientID + ":" + g.config.ClientSecret))
 	response, err := g.transport.PostForm(ctx, g.config.ResolvedBaseURL()+"/token", url.Values{"grant_type": {"client_credentials"}}, map[string]string{"Authorization": "Basic " + credentials})
 	if err != nil {

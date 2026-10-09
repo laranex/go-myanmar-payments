@@ -3,6 +3,7 @@ package myanmarpayments
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -98,7 +99,7 @@ func (r *statusRecorder) WriteHeader(status int)      { r.status = status }
 
 func TestErrorMessages(t *testing.T) {
 	invalid := &InvalidPaymentDataError{Errors: map[string]string{"b": "B is wrong.", "a": "A is wrong."}}
-	if invalid.Error() != "myanmarpayments: invalid payment data: A is wrong. B is wrong." {
+	if invalid.Error() != "myanmarpayments: Invalid payment data: A is wrong. B is wrong." {
 		t.Fatalf("unexpected message %q", invalid.Error())
 	}
 	if (&APIError{Message: "KBZ Pay precreate failed."}).Error() != "myanmarpayments: KBZ Pay precreate failed." {
@@ -107,7 +108,7 @@ func TestErrorMessages(t *testing.T) {
 	if (&SignatureVerificationError{Message: "bad"}).Error() != "myanmarpayments: bad" {
 		t.Fatal("unexpected signature error message")
 	}
-	if (&ConfigurationError{Gateway: "kbz_pay", Key: "app_key"}).Error() != "myanmarpayments: the kbz_pay configuration is missing [app_key]" {
+	if (&ConfigurationError{Gateway: "kbz_pay", Key: "app_key"}).Error() != "myanmarpayments: The kbz_pay configuration is missing [app_key]." {
 		t.Fatal("unexpected configuration error message")
 	}
 	var apiErr *APIError
@@ -158,5 +159,38 @@ func TestOnlyAJSONObjectBodyIsReadAsJSON(t *testing.T) {
 		if _, ok := NewCallbackRequest([]byte(raw), nil, nil).ParsedBody()["a"]; ok {
 			t.Fatalf("%q should not decode as a JSON object", raw)
 		}
+	}
+}
+
+func TestEveryErrorIsAPaymentError(t *testing.T) {
+	for _, err := range []error{
+		&InvalidPaymentDataError{}, &APIError{}, &SignatureVerificationError{}, &ConfigurationError{},
+		fmt.Errorf("wrapped: %w", &APIError{Message: "x"}),
+	} {
+		var paymentErr PaymentError
+		if !errors.As(err, &paymentErr) {
+			t.Errorf("%T is not a PaymentError", err)
+		}
+	}
+	var paymentErr PaymentError
+	if errors.As(errors.New("plain"), &paymentErr) {
+		t.Error("a plain error is not a PaymentError")
+	}
+}
+
+func TestPaymentStatusesListsEveryStatusInOrder(t *testing.T) {
+	want := []PaymentStatus{"successful", "pending", "failed", "canceled", "expired", "unknown"}
+	got := PaymentStatuses()
+	if len(got) != len(want) {
+		t.Fatalf("PaymentStatuses() = %v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("PaymentStatuses() = %v, want %v", got, want)
+		}
+	}
+	got[0] = "changed"
+	if PaymentStatuses()[0] != StatusSuccessful {
+		t.Fatal("PaymentStatuses returns a shared slice")
 	}
 }
