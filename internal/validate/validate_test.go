@@ -23,8 +23,8 @@ func TestErrIsNilWhenEveryCheckPasses(t *testing.T) {
 		Length("order_id", "ORDER_1", 1, 20).
 		Max("note", "short", 10).
 		Pattern("order_id", "ORDER_1", regexp.MustCompile(`^[A-Z_0-9]+$`), "letters, numbers and underscores").
-		Between("expires", 0, 1, 60).
-		Between("expires", 30, 1, 60).
+		Between("expires", nil, 1, 60).
+		Between("expires", intPtr(30), 1, 60).
 		Amount("amount", myanmarpayments.Kyat(1000), AmountRule{Gateway: "KBZ Pay", MaxDecimals: 2}).
 		URL("callback_url", "https://shop.test/callback").
 		When(false, "items", "never").
@@ -45,7 +45,8 @@ func TestStringRules(t *testing.T) {
 		Max("note", "0123456789x", 10).
 		Pattern("digits", "12a", pattern, "digits").
 		Pattern("digits_skipped", "", pattern, "digits").
-		Between("expires", 61, 1, 60).
+		Between("expires", intPtr(61), 1, 60).
+		Between("zero", intPtr(0), 1, 60).
 		When(true, "items", "The items field needs at least one item.").
 		Err())
 
@@ -56,6 +57,7 @@ func TestStringRules(t *testing.T) {
 		"note":     "The note field must not be greater than 10 characters.",
 		"digits":   "The digits field may only contain digits.",
 		"expires":  "The expires field must be between 1 and 60.",
+		"zero":     "The zero field must be between 1 and 60.",
 		"items":    "The items field needs at least one item.",
 	}
 	if len(errs) != len(want) {
@@ -136,3 +138,5 @@ func TestAmountFollowsTheGatewayRule(t *testing.T) {
 		})
 	}
 }
+
+func intPtr(n int) *int { return &n }

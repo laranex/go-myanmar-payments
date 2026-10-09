@@ -50,8 +50,14 @@ func (s Signer) Sign(fields map[string]any) string {
 	return strings.ToUpper(hex.EncodeToString(sum[:]))
 }
 
-// Verify checks fields["sign"] in constant time.
+// Verify checks fields["sign"] in constant time. Nested values are never signed, so fields
+// holding an object or array fail verification rather than being partly trusted.
 func (s Signer) Verify(fields map[string]any) bool {
+	for _, value := range fields {
+		if values.IsNested(value) {
+			return false
+		}
+	}
 	sign, ok := fields["sign"].(string)
 	if !ok {
 		return false

@@ -23,4 +23,15 @@ Initial release. The version number matches the other Laranex packages (`php-mya
 - Agent skill in `skills/go-myanmar-payments` so coding agents (Claude Code, Codex, Cursor and others) integrate the module correctly; install it with `npx skills add laranex/go-myanmar-payments`.
 
 ### Changed since the pre-releases
+- Behavior aligned with `php-`, `node-` and `python-myanmar-payments`, checked by the shared vectors in `testdata/parity/vectors.json`:
+  - KBZ Pay `PaymentData.TimeoutMinutes` is now `*int`: nil means KBZ's default, and any value outside 1 to 120, including 0, is rejected (0 used to mean unset).
+  - A nested value (object or array) in a signed or hashed callback field now fails verification: any KBZ Pay field, Wave Money's hashed fields, AYA's signed payload fields and Yoma's `orderNumber`/`status` (Wave used to hash it as `null`, KBZ and AYA ignored it).
+  - AYA's base64 `payload` may be padded or unpadded; partial padding, the URL-safe alphabet, whitespace and payloads that are not UTF-8 are rejected.
+  - The Yoma MMQR token cache key is `myanmar-payments.yoma-mmqr.token.<sha256(baseUrl|clientId)>` (was `go-myanmar-payments.`-prefixed), the same in every SDK so one shared cache serves them all; `expires_in` is read from its leading digits (`28800.0` is 28800 seconds).
+  - New `Amount.Equals(text)` (compares by value: `01000`, `1000` and `1000.00` are equal; text that is not plain digits never is) and `Amount.WholePart()`.
+  - New `(*kbzpay.Gateway).Signer()` for custom calls.
+  - `FormPayment.HTML` escapes exactly `&`, `<`, `>`, `"` (`&#34;`) and `'` (`&#39;`), producing the same page as the other SDKs.
+  - Wave Money's `items` JSON no longer HTML-escapes `<`, `>` and `&` in item names.
+  - A callback body is read as JSON only when it is a single JSON object; a malformed pair in a urlencoded body is skipped instead of discarding the whole form.
+  - `APIError` messages no longer end with a space when the gateway sends a code without a message.
 - `StatusCancelled` is renamed to `StatusCanceled` and its value from `"cancelled"` to `"canceled"` (American English), with no alias. Code or stored statuses from `v4.0.0-alpha.1` need the new name; gateway status literals such as Wave Money's `PAYMENT_REQUEST_CANCELLED` are unchanged.

@@ -1,10 +1,13 @@
 package myanmarpayments
 
 import (
-	"html/template"
 	"strings"
 	"time"
 )
+
+// htmlEscaper escapes the five characters that matter in HTML text and attribute values, the
+// same way every Laranex payments SDK does.
+var htmlEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&#34;", "'", "&#39;")
 
 // PaymentResult is returned when a payment is initiated. Each flow has its own type.
 type PaymentResult interface {
@@ -71,7 +74,7 @@ func (p FormPayment) Values() map[string]string {
 
 // HTML returns a complete page that posts the form as soon as it loads. All values are escaped.
 func (p FormPayment) HTML() string {
-	escape := template.HTMLEscapeString
+	escape := htmlEscaper.Replace
 	enctype := p.Enctype
 	if enctype == "" {
 		enctype = "application/x-www-form-urlencoded"

@@ -70,3 +70,20 @@ func TestGetTrimmedAndMapReadDecodedPayloads(t *testing.T) {
 		t.Fatalf("Map(missing) = %v, want nil", got)
 	}
 }
+
+func TestDecodeObject(t *testing.T) {
+	if decoded, ok := DecodeObject([]byte(` {"amount": 1000.50} `)); !ok || decoded["amount"] != json.Number("1000.50") {
+		t.Fatalf("unexpected %v %v", decoded, ok)
+	}
+	for _, raw := range []string{`[1]`, `"a"`, `null`, `{"a":1}{"b":2}`, `{"a":1} x`, `{`} {
+		if _, ok := DecodeObject([]byte(raw)); ok {
+			t.Errorf("%q should not decode as an object", raw)
+		}
+	}
+}
+
+func TestIsNested(t *testing.T) {
+	if !IsNested(map[string]any{}) || !IsNested([]any{}) || IsNested("a") || IsNested(nil) || IsNested(json.Number("1")) {
+		t.Fatal("IsNested is wrong")
+	}
+}

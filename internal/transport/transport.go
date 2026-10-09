@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
+	"github.com/laranex/go-myanmar-payments/v4/internal/values"
 )
 
 // Client posts requests through an HTTPDoer.
@@ -38,10 +39,8 @@ func (r Response) Successful() bool { return r.Status >= 200 && r.Status < 300 }
 
 // JSON decodes the body as an object, keeping numbers as json.Number.
 func (r Response) JSON() map[string]any {
-	decoder := json.NewDecoder(bytes.NewReader(r.Body))
-	decoder.UseNumber()
-	var decoded map[string]any
-	if err := decoder.Decode(&decoded); err != nil || decoded == nil {
+	decoded, ok := values.DecodeObject(r.Body)
+	if !ok {
 		return map[string]any{}
 	}
 	return decoded

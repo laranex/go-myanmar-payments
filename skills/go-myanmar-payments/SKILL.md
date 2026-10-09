@@ -38,7 +38,7 @@ kbz, err := kbzpay.New(kbzpay.ConfigFromEnv(os.Getenv), nil)
 
 ### Amounts
 
-Amounts are `myanmarpayments.Amount`: `Kyat(1000)` or `ParseAmount("1000.50")` (returns an error; `MustParseAmount` for constants), never `float64`. Only KBZ Pay (up to 2 decimals) and CyberSource accept decimals; Wave, AYA and Yoma take whole kyat. Invalid data returns `*InvalidPaymentDataError` with `Errors`.
+Amounts are `myanmarpayments.Amount`: `Kyat(1000)` or `ParseAmount("1000.50")` (returns an error; `MustParseAmount` for constants), never `float64`. Only KBZ Pay (up to 2 decimals) and CyberSource accept decimals; Wave, AYA and Yoma take whole kyat. Compare a gateway's amount with `amount.Equals(callback.Amount)` (by value, so `1000` equals `1000.00`). KBZ's optional `TimeoutMinutes` is an `*int` (1 to 120). Invalid data returns `*InvalidPaymentDataError` with `Errors`.
 
 ### Start a payment
 
@@ -82,7 +82,7 @@ if err != nil {
 }
 
 if callback.IsSuccessful() {
-    // compare callback.Amount with the order, then fulfill callback.OrderID once
+    // check order.Amount.Equals(callback.Amount), then fulfill callback.OrderID once
 }
 
 return callback.Acknowledgement.Write(w)

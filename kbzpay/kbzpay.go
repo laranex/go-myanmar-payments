@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
@@ -52,6 +53,9 @@ func New(config Config, client myanmarpayments.HTTPDoer) (*Gateway, error) {
 // Config returns the configuration in use.
 func (g *Gateway) Config() Config { return g.config }
 
+// Signer returns KBZ Pay's request signer, for custom calls.
+func (g *Gateway) Signer() Signer { return g.signer }
+
 // PWA creates an order and returns the KBZ Pay PWA checkout URL to redirect the customer to.
 //
 // The redirect only works on a phone with the KBZ Pay app installed, and its Referer must
@@ -83,8 +87,8 @@ func (g *Gateway) QR(ctx context.Context, data PaymentData) (*myanmarpayments.Qr
 	}
 
 	payment := &myanmarpayments.QrPayment{OrderID: data.OrderID, QRString: qrCode, Reference: order.prepayID, Raw: order.response}
-	if data.TimeoutMinutes > 0 {
-		payment.ExpiresAt = g.now().Add(time.Duration(data.TimeoutMinutes) * time.Minute)
+	if data.TimeoutMinutes != nil {
+		payment.ExpiresAt = g.now().Add(time.Duration(*data.TimeoutMinutes) * time.Minute)
 	}
 	return payment, nil
 }
@@ -184,8 +188,8 @@ func (g *Gateway) precreate(ctx context.Context, data PaymentData, tradeType str
 	if data.Title != "" {
 		biz["title"] = data.Title
 	}
-	if data.TimeoutMinutes > 0 {
-		biz["timeout_express"] = strconv.Itoa(data.TimeoutMinutes) + "m"
+	if data.TimeoutMinutes != nil {
+		biz["timeout_express"] = strconv.Itoa(*data.TimeoutMinutes) + "m"
 	}
 	if data.CallbackInfo != "" {
 		biz["callback_info"] = url.QueryEscape(data.CallbackInfo)
@@ -239,7 +243,7 @@ func (g *Gateway) call(ctx context.Context, endpoint, method, version string, bi
 		code, message := values.Get(result, "code"), values.Get(result, "msg")
 		text := fmt.Sprintf("KBZ Pay %s failed with HTTP %d.", endpoint, response.Status)
 		if code != "" {
-			text = fmt.Sprintf("KBZ Pay %s failed: [%s] %s", endpoint, code, message)
+			text = strings.TrimRight(fmt.Sprintf("KBZ Pay %s failed: [%s] %s", endpoint, code, message), " ")
 		}
 		return nil, &myanmarpayments.APIError{Message: text, GatewayCode: code, GatewayMessage: message, HTTPStatus: response.Status, Raw: body}
 	}

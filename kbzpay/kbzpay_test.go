@@ -134,7 +134,7 @@ func TestAppReturnsSignedOrderInfo(t *testing.T) {
 func TestOptionalFieldsGoInBizContentAndDecimalsAreKept(t *testing.T) {
 	server := testutil.NewServer(t, precreate(nil))
 
-	_, err := newGateway(t, server).PWA(context.Background(), PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.MustParseAmount("1000.50"), CallbackURL: "https://shop.test/cb", Title: "Shoes", TimeoutMinutes: 30, CallbackInfo: "cart=9"})
+	_, err := newGateway(t, server).PWA(context.Background(), PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.MustParseAmount("1000.50"), CallbackURL: "https://shop.test/cb", Title: "Shoes", TimeoutMinutes: minutes(30), CallbackInfo: "cart=9"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +235,9 @@ func TestValidationFollowsKBZLimits(t *testing.T) {
 		"three decimals":          {PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.MustParseAmount("1000.505"), CallbackURL: "https://shop.test/cb"}, "amount"},
 		"negative":                {PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(-5), CallbackURL: "https://shop.test/cb"}, "amount"},
 		"callback url with query": {PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb?x=1"}, "callbackUrl"},
-		"timeout above 120":       {PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb", TimeoutMinutes: 121}, "timeoutMinutes"},
+		"timeout above 120":       {PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb", TimeoutMinutes: minutes(121)}, "timeoutMinutes"},
+		"timeout of zero":         {PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb", TimeoutMinutes: minutes(0)}, "timeoutMinutes"},
+		"negative timeout":        {PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb", TimeoutMinutes: minutes(-1)}, "timeoutMinutes"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -273,7 +275,7 @@ func TestKBZAmountErrorsNameTheGateway(t *testing.T) {
 
 func TestQRExpiresWithTheTimeoutAndNeedsAQRCode(t *testing.T) {
 	withTimeout := data
-	withTimeout.TimeoutMinutes = 15
+	withTimeout.TimeoutMinutes = minutes(15)
 	payment, err := newGateway(t, testutil.NewServer(t, precreate(map[string]any{"qrCode": "kbzpay://qr/abc"}))).QR(context.Background(), withTimeout)
 	if err != nil {
 		t.Fatal(err)
@@ -296,5 +298,57 @@ func TestMissingPrepayIDAndInvalidDataAreErrors(t *testing.T) {
 	var invalid *myanmarpayments.InvalidPaymentDataError
 	if _, err := newGateway(t, nil).QR(context.Background(), PaymentData{}); !errors.As(err, &invalid) {
 		t.Fatalf("expected InvalidPaymentDataError, got %v", err)
+	}
+}
+
+func minutes(n int) *int { return &n }
+
+func TestTimeoutMinutesOfZeroIsRejectedWithTheSharedMessage(t *testing.T) {
+	vectors := testutil.Fixture(t, "parity/vectors.json")
+	want := vectors["messages"].(map[string]any)["kbz_timeout_zero"]
+	withZero := data
+	withZero.TimeoutMinutes = minutes(0)
+	var invalid *myanmarpayments.InvalidPaymentDataError
+	if err := withZero.Validate(); !errors.As(err, &invalid) || invalid.Errors["timeoutMinutes"] != want {
+		t.Fatalf("unexpected error %v", err)
+	}
+	withBounds := data
+	for _, n := range []int{1, 120} {
+		withBounds.TimeoutMinutes = minutes(n)
+		if err := withBounds.Validate(); err != nil {
+			t.Fatalf("timeout %d: unexpected error %v", n, err)
+		}
+	}
+}
+
+func TestSignerIsExposedForCustomCalls(t *testing.T) {
+	gateway := newGateway(t, testutil.NewServer(t))
+	fields := map[string]any{"appid": "kp123", "nonce_str": "n"}
+	if gateway.Signer().Sign(fields) != NewSigner(gateway.Config().AppKey).Sign(fields) {
+		t.Fatal("Signer() does not sign with the configured app key")
+	}
+}
+
+func TestNestedValuesFailVerification(t *testing.T) {
+	signer := NewSigner("key")
+	fields := map[string]any{"appid": "kp123", "trade_status": "PAY_SUCCESS"}
+	fields["sign"] = signer.Sign(fields)
+	if !signer.Verify(fields) {
+		t.Fatal("flat fields should verify")
+	}
+	for _, nested := range []any{map[string]any{"a": "b"}, []any{"a"}} {
+		fields["extra"] = nested
+		if signer.Verify(fields) {
+			t.Fatalf("nested %v should fail verification", nested)
+		}
+	}
+}
+
+func TestAPIErrorWithoutAMessageHasNoTrailingSpace(t *testing.T) {
+	server := testutil.NewServer(t, testutil.Reply{Body: map[string]any{"Response": map[string]any{"result": "FAIL", "code": "AUTHENTICATION_FAILED"}}})
+	_, err := newGateway(t, server).Status(context.Background(), "ORDER_1")
+	var apiErr *myanmarpayments.APIError
+	if !errors.As(err, &apiErr) || apiErr.Message != "KBZ Pay queryorder failed: [AUTHENTICATION_FAILED]" {
+		t.Fatalf("unexpected error %#v", err)
 	}
 }

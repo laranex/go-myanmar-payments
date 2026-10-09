@@ -3,6 +3,7 @@
 package wavemoney
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -74,10 +75,14 @@ func (g *Gateway) Initiate(ctx context.Context, data *PaymentData) (*myanmarpaym
 	for i, item := range data.Items {
 		wireItems[i] = waveItem{Name: item.Name, Amount: json.Number(item.Amount.String())}
 	}
-	items, err := json.Marshal(wireItems)
-	if err != nil {
+	// Like the other Laranex SDKs, item names are not HTML-escaped (no \u003c for "<").
+	var encoded bytes.Buffer
+	encoder := json.NewEncoder(&encoded)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(wireItems); err != nil {
 		return nil, fmt.Errorf("myanmarpayments: encode items: %w", err)
 	}
+	items := bytes.TrimRight(encoded.Bytes(), "\n")
 
 	form := url.Values{}
 	form.Set("time_to_live_in_seconds", strconv.Itoa(ttl))
@@ -128,8 +133,12 @@ func (g *Gateway) Initiate(ctx context.Context, data *PaymentData) (*myanmarpaym
 func (g *Gateway) HandleCallback(request *myanmarpayments.CallbackRequest) (*myanmarpayments.PaymentCallback, error) {
 	payload := request.ParsedBody()
 
+	// Missing and null fields hash as "null". A nested value is never hashed, so a payload
+	// carrying one in a hashed field is rejected rather than partly trusted.
 	parts := make([]string, len(callbackFields))
+	nested := false
 	for i, field := range callbackFields {
+		nested = nested || values.IsNested(payload[field])
 		value, ok := values.String(payload[field])
 		if !ok {
 			value = "null"
@@ -137,7 +146,7 @@ func (g *Gateway) HandleCallback(request *myanmarpayments.CallbackRequest) (*mya
 		parts[i] = value
 	}
 	hashValue, _ := payload["hashValue"].(string)
-	if !hmac.Equal([]byte(g.hash(parts)), []byte(strings.ToLower(hashValue))) {
+	if nested || !hmac.Equal([]byte(g.hash(parts)), []byte(strings.ToLower(hashValue))) {
 		return nil, &myanmarpayments.SignatureVerificationError{Message: "Wave Money callback hash verification failed.", Raw: payload}
 	}
 

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -258,5 +259,65 @@ func TestFailedTokenRequestIsAnAPIError(t *testing.T) {
 	var apiErr *myanmarpayments.APIError
 	if !errors.As(err, &apiErr) || apiErr.GatewayCode != "invalid_client" || apiErr.GatewayMessage != "Client authentication failed" || apiErr.HTTPStatus != http.StatusUnauthorized {
 		t.Fatalf("unexpected error %v", err)
+	}
+}
+
+type ttlCache struct {
+	*myanmarpayments.MemoryTokenCache
+	ttls map[string]time.Duration
+}
+
+func (c ttlCache) Set(key, value string, ttl time.Duration) {
+	c.ttls[key] = ttl
+	c.MemoryTokenCache.Set(key, value, ttl)
+}
+
+func TestTokenLifetimeIsReadFromTheLeadingDigitsOfExpiresIn(t *testing.T) {
+	cases := map[string]time.Duration{
+		`28800`: 28740 * time.Second, `"28800"`: 28740 * time.Second, `28800.0`: 28740 * time.Second,
+		`"1e5"`: time.Minute, `90`: time.Minute, `0`: 3540 * time.Second, `"abc"`: 3540 * time.Second,
+		`null`: 3540 * time.Second,
+	}
+	for raw, want := range cases {
+		t.Run(raw, func(t *testing.T) {
+			server := testutil.NewServer(t,
+				testutil.Reply{Body: map[string]any{"access_token": "tok", "expires_in": json.RawMessage(raw)}},
+				testutil.Reply{Body: map[string]any{"refLabel": "REF", "paymentStatus": "PENDING"}},
+			)
+			cache := ttlCache{myanmarpayments.NewMemoryTokenCache(), map[string]time.Duration{}}
+			gateway := newGateway(t, server, cache)
+			if _, err := gateway.Status(context.Background(), "REF"); err != nil {
+				t.Fatal(err)
+			}
+			if got := cache.ttls[gateway.tokenCacheKey()]; got != want {
+				t.Fatalf("ttl = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+func TestTokenCacheKeyIsSharedWithTheOtherSDKs(t *testing.T) {
+	gateway := newGateway(t, nil, nil)
+	sum := sha256.Sum256([]byte(SandboxURL + "|client"))
+	if gateway.tokenCacheKey() != "myanmar-payments.yoma-mmqr.token."+hex.EncodeToString(sum[:]) {
+		t.Fatalf("unexpected key %s", gateway.tokenCacheKey())
+	}
+}
+
+func TestNestedStatusFailsVerification(t *testing.T) {
+	body := `{"orderNumber":"ORDER1","status":{"code":"SUCCESS"},"hashValue":"` + hmacHex("orderNumber=ORDER1&status=", "ORDER1hash-key") + `"}`
+	_, err := newGateway(t, nil, nil).HandleCallback(myanmarpayments.NewCallbackRequest([]byte(body), nil, nil))
+	var sigErr *myanmarpayments.SignatureVerificationError
+	if !errors.As(err, &sigErr) {
+		t.Fatalf("expected SignatureVerificationError, got %v", err)
+	}
+}
+
+func TestAPIErrorWithoutAMessageHasNoTrailingSpace(t *testing.T) {
+	server := testutil.NewServer(t, token("tok"), testutil.Reply{Body: map[string]any{"errorCode": "E01"}})
+	_, err := newGateway(t, server, nil).Status(context.Background(), "REF")
+	var apiErr *myanmarpayments.APIError
+	if !errors.As(err, &apiErr) || apiErr.Message != "Yoma MMQR payment/check-status failed: [E01]" {
+		t.Fatalf("unexpected error %#v", err)
 	}
 }
