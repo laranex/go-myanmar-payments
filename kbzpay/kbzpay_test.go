@@ -158,7 +158,7 @@ func TestStatusMapsEveryTradeStatus(t *testing.T) {
 	cases := map[string]myanmarpayments.PaymentStatus{
 		"PAY_SUCCESS": myanmarpayments.StatusSuccessful, " PAY_SUCCESS": myanmarpayments.StatusSuccessful,
 		"WAIT_PAY": myanmarpayments.StatusPending, "PAYING": myanmarpayments.StatusPending,
-		"PAY_FAILED": myanmarpayments.StatusFailed, "ORDER_CLOSED": myanmarpayments.StatusCancelled,
+		"PAY_FAILED": myanmarpayments.StatusFailed, "ORDER_CLOSED": myanmarpayments.StatusCanceled,
 		"ORDER_EXPIRED": myanmarpayments.StatusExpired, "SOMETHING_NEW": myanmarpayments.StatusUnknown,
 	}
 	for tradeStatus, want := range cases {

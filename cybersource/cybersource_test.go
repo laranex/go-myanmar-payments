@@ -78,7 +78,7 @@ func TestDecimalAmountsAndOtherCurrencies(t *testing.T) {
 func TestDecisionsAreMapped(t *testing.T) {
 	cases := map[string]myanmarpayments.PaymentStatus{
 		"ACCEPT": myanmarpayments.StatusSuccessful, "REVIEW": myanmarpayments.StatusPending, "DECLINE": myanmarpayments.StatusFailed,
-		"ERROR": myanmarpayments.StatusFailed, "CANCEL": myanmarpayments.StatusCancelled,
+		"ERROR": myanmarpayments.StatusFailed, "CANCEL": myanmarpayments.StatusCanceled,
 	}
 	for decision, want := range cases {
 		t.Run(decision, func(t *testing.T) {

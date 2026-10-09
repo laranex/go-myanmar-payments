@@ -21,7 +21,7 @@ var statuses = map[string]myanmarpayments.PaymentStatus{
 	"WAIT_PAY":      myanmarpayments.StatusPending,
 	"PAYING":        myanmarpayments.StatusPending,
 	"PAY_FAILED":    myanmarpayments.StatusFailed,
-	"ORDER_CLOSED":  myanmarpayments.StatusCancelled,
+	"ORDER_CLOSED":  myanmarpayments.StatusCanceled,
 	"ORDER_EXPIRED": myanmarpayments.StatusExpired,
 }
 

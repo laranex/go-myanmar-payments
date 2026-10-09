@@ -93,7 +93,7 @@ Check AYA's browser return with `aya.VerifyRedirect(request)`.
 ### Check status and handle errors
 
 - `kbz.Status(ctx, orderID)`, `aya.Status(ctx, orderID)` and `yoma.Status(ctx, reference)` return `*PaymentStatusResult` with `Status` and `IsSuccessful()`.
-- Statuses are `StatusSuccessful`, `StatusPending`, `StatusFailed`, `StatusCancelled`, `StatusExpired` and `StatusUnknown`.
+- Statuses are `StatusSuccessful`, `StatusPending`, `StatusFailed`, `StatusCanceled`, `StatusExpired` and `StatusUnknown`.
 - Gateway failures return `*APIError` (`GatewayCode`, `GatewayMessage`, `HTTPStatus`, `Raw`); `Unwrap` exposes transport errors such as a canceled `ctx`.
 
 ## Test your app
