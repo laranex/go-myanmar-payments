@@ -206,7 +206,9 @@ func toCallback(payload map[string]any) *myanmarpayments.PaymentCallback {
 
 // verifiedPayload decodes a payload + checkSum pair and returns the payload if the checksum matches.
 func (g *Gateway) verifiedPayload(input map[string]any, context string) (map[string]any, error) {
-	encoded, checkSum := values.Get(input, "payload"), values.Get(input, "checkSum")
+	// A "+" in the base64 payload arrives as a space when the query string is not encoded;
+	// base64 never contains spaces, so map them back. The checksum is still verified.
+	encoded, checkSum := strings.ReplaceAll(values.Get(input, "payload"), " ", "+"), values.Get(input, "checkSum")
 	fail := &myanmarpayments.SignatureVerificationError{Message: fmt.Sprintf("AYA Pay %s checksum verification failed.", context), Raw: input}
 
 	raw, err := base64.StdEncoding.DecodeString(encoded)
