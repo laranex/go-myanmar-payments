@@ -155,3 +155,61 @@ func TestCyberSourceAcceptsZeroAndAnyDecimalPlaces(t *testing.T) {
 		}
 	}
 }
+
+func TestReplayedRequestFormWithUnsignedResultFieldsIsRejected(t *testing.T) {
+	payment, err := newGateway(t).Initiate(PaymentData{OrderID: "ORDER-1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	form := url.Values{}
+	for _, field := range payment.Fields {
+		form.Set(field.Name, field.Value)
+	}
+	form.Set("decision", "ACCEPT")
+	form.Set("req_reference_number", "ORDER-1")
+	form.Set("auth_amount", "1000")
+
+	_, err = newGateway(t).HandleCallback(myanmarpayments.NewCallbackRequest([]byte(form.Encode()), nil, nil))
+	var sigErr *myanmarpayments.SignatureVerificationError
+	if !errors.As(err, &sigErr) {
+		t.Fatalf("expected SignatureVerificationError, got %v", err)
+	}
+}
+
+func TestUnsignedAmountAndReferenceAreIgnored(t *testing.T) {
+	request := callback(map[string]string{"signed_field_names": "decision,req_reference_number,req_amount,signed_field_names"})
+	form, _ := url.ParseQuery(string(request.Body))
+	form.Set("auth_amount", "1.00")
+	form.Set("transaction_id", "forged")
+
+	result, err := newGateway(t).HandleCallback(myanmarpayments.NewCallbackRequest([]byte(form.Encode()), nil, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Amount != "1000.00" || result.GatewayReference != "" || !result.IsSuccessful() {
+		t.Fatalf("unexpected callback %+v", result)
+	}
+}
+
+func TestConfigFromEnvAndEndpoints(t *testing.T) {
+	env := map[string]string{
+		"CYBER_SOURCE_PROFILE_ID": "profile", "CYBER_SOURCE_ACCESS_KEY": "access", "CYBER_SOURCE_SECRET_KEY": "secret",
+		"CYBER_SOURCE_SANDBOX": "false",
+	}
+	config := ConfigFromEnv(func(key string) string { return env[key] })
+	if config.ProfileID != "profile" || config.AccessKey != "access" || config.SecretKey != "secret" || !config.Production {
+		t.Fatalf("unexpected config %+v", config)
+	}
+	if config.ResolvedBaseURL() != ProductionURL || (Config{}).ResolvedBaseURL() != SandboxURL || (Config{BaseURL: "https://cs.test/"}).ResolvedBaseURL() != "https://cs.test" {
+		t.Fatal("unexpected base URL")
+	}
+
+	gateway, err := New(config)
+	if err != nil || gateway.Config() != config {
+		t.Fatalf("unexpected gateway %v", err)
+	}
+	var configErr *myanmarpayments.ConfigurationError
+	if _, err := New(Config{ProfileID: "p", AccessKey: "a"}); !errors.As(err, &configErr) || configErr.Key != "secret_key" {
+		t.Fatalf("expected missing secret_key, got %v", err)
+	}
+}

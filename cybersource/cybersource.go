@@ -83,28 +83,52 @@ func (g *Gateway) Initiate(data PaymentData) (*myanmarpayments.FormPayment, erro
 
 // HandleCallback verifies CyberSource's result post. The same check works for the browser post
 // to your receipt page.
+//
+// Only signed fields are trusted: decision and req_reference_number must be listed in
+// signed_field_names, and the amount and transaction id are read only when they are signed.
+// Without this rule the signed request form, which the customer's browser sees, could be
+// replayed with unsigned result fields added.
 func (g *Gateway) HandleCallback(request *myanmarpayments.CallbackRequest) (*myanmarpayments.PaymentCallback, error) {
 	payload := request.Input()
 	expected, ok := g.sign(payload)
-	if !ok || !hmac.Equal([]byte(expected), []byte(values.Get(payload, "signature"))) {
+	signed := signedNames(payload)
+	if !ok || !hmac.Equal([]byte(expected), []byte(values.Get(payload, "signature"))) || !signed["decision"] || !signed["req_reference_number"] {
 		return nil, &myanmarpayments.SignatureVerificationError{Message: "CyberSource callback signature verification failed.", Raw: payload}
 	}
 
+	signedValue := func(name string) string {
+		if !signed[name] {
+			return ""
+		}
+		return values.Get(payload, name)
+	}
+
 	decision := strings.ToUpper(values.Trimmed(payload, "decision"))
-	amount := values.Get(payload, "auth_amount")
+	amount := signedValue("auth_amount")
 	if amount == "" {
-		amount = values.Get(payload, "req_amount")
+		amount = signedValue("req_amount")
 	}
 
 	return &myanmarpayments.PaymentCallback{
 		OrderID:          values.Get(payload, "req_reference_number"),
 		Status:           myanmarpayments.ResolveStatus(statuses, decision),
 		GatewayStatus:    decision,
-		GatewayReference: values.Get(payload, "transaction_id"),
+		GatewayReference: signedValue("transaction_id"),
 		Amount:           amount,
 		Raw:              payload,
 		Acknowledgement:  myanmarpayments.DefaultAcknowledgement(),
 	}, nil
+}
+
+// signedNames returns the field names listed in signed_field_names.
+func signedNames(fields map[string]any) map[string]bool {
+	names := map[string]bool{}
+	for _, name := range strings.Split(values.Get(fields, "signed_field_names"), ",") {
+		if name != "" {
+			names[name] = true
+		}
+	}
+	return names
 }
 
 // sign signs the fields listed in signed_field_names; ok is false when a listed field is missing.
