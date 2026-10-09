@@ -85,7 +85,8 @@ func (g *Gateway) Initiate(data PaymentData) (*myanmarpayments.FormPayment, erro
 // to your receipt page.
 //
 // Only signed fields are trusted: decision and req_reference_number must be listed in
-// signed_field_names, and the amount and transaction id are read only when they are signed.
+// signed_field_names, the amount and transaction id are read only when they are signed, and Raw
+// keeps only the signed fields plus signature.
 // Without this rule the signed request form, which the customer's browser sees, could be
 // replayed with unsigned result fields added.
 func (g *Gateway) HandleCallback(request *myanmarpayments.CallbackRequest) (*myanmarpayments.PaymentCallback, error) {
@@ -109,13 +110,18 @@ func (g *Gateway) HandleCallback(request *myanmarpayments.CallbackRequest) (*mya
 		amount = signedValue("req_amount")
 	}
 
+	raw := map[string]any{"signature": payload["signature"]}
+	for name := range signed {
+		raw[name] = payload[name]
+	}
+
 	return &myanmarpayments.PaymentCallback{
 		OrderID:          values.Get(payload, "req_reference_number"),
 		Status:           myanmarpayments.ResolveStatus(statuses, decision),
 		GatewayStatus:    decision,
 		GatewayReference: signedValue("transaction_id"),
 		Amount:           amount,
-		Raw:              payload,
+		Raw:              raw,
 		Acknowledgement:  myanmarpayments.DefaultAcknowledgement(),
 	}, nil
 }

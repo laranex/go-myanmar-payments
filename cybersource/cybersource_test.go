@@ -213,3 +213,17 @@ func TestConfigFromEnvAndEndpoints(t *testing.T) {
 		t.Fatalf("expected missing secret_key, got %v", err)
 	}
 }
+
+func TestRawKeepsOnlySignedFields(t *testing.T) {
+	request := callback(nil)
+	form, _ := url.ParseQuery(string(request.Body))
+	form.Set("unsigned_note", "forged")
+
+	result, err := newGateway(t).HandleCallback(myanmarpayments.NewCallbackRequest([]byte(form.Encode()), nil, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := result.Raw["unsigned_note"]; ok || result.Raw["decision"] != "ACCEPT" || result.Raw["signature"] == nil || len(result.Raw) != 6 {
+		t.Fatalf("unexpected raw %v", result.Raw)
+	}
+}
