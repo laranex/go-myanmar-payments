@@ -143,7 +143,7 @@ func TestInvalidEndpointsBecomeAPIErrors(t *testing.T) {
 	}
 }
 
-func TestCancelledContextStopsTheRequest(t *testing.T) {
+func TestCanceledContextStopsTheRequest(t *testing.T) {
 	s, _ := server(t, http.StatusOK, "{}")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

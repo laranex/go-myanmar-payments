@@ -24,7 +24,7 @@ var statuses = map[string]myanmarpayments.PaymentStatus{
 	"INSUFFICIENT_BALANCE":            myanmarpayments.StatusPending,
 	"ACCOUNT_LOCKED":                  myanmarpayments.StatusFailed,
 	"BILL_COLLECTION_FAILED":          myanmarpayments.StatusFailed,
-	"PAYMENT_REQUEST_CANCELLED":       myanmarpayments.StatusCancelled,
+	"PAYMENT_REQUEST_CANCELLED":       myanmarpayments.StatusCanceled,
 	"TRANSACTION_TIMED_OUT":           myanmarpayments.StatusExpired,
 	"SCHEDULER_TRANSACTION_TIMED_OUT": myanmarpayments.StatusExpired,
 }

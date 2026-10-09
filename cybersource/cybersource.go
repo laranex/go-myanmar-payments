@@ -25,7 +25,7 @@ var statuses = map[string]myanmarpayments.PaymentStatus{
 	"REVIEW":  myanmarpayments.StatusPending,
 	"DECLINE": myanmarpayments.StatusFailed,
 	"ERROR":   myanmarpayments.StatusFailed,
-	"CANCEL":  myanmarpayments.StatusCancelled,
+	"CANCEL":  myanmarpayments.StatusCanceled,
 }
 
 // Gateway signs Secure Acceptance forms and verifies their results.

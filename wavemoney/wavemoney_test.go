@@ -148,7 +148,7 @@ func TestEveryDocumentedCallbackStatusIsMapped(t *testing.T) {
 	cases := map[string]myanmarpayments.PaymentStatus{
 		"PAYMENT_CONFIRMED": myanmarpayments.StatusSuccessful, "INSUFFICIENT_BALANCE": myanmarpayments.StatusPending,
 		"ACCOUNT_LOCKED": myanmarpayments.StatusFailed, "BILL_COLLECTION_FAILED": myanmarpayments.StatusFailed,
-		"PAYMENT_REQUEST_CANCELLED": myanmarpayments.StatusCancelled, "TRANSACTION_TIMED_OUT": myanmarpayments.StatusExpired,
+		"PAYMENT_REQUEST_CANCELLED": myanmarpayments.StatusCanceled, "TRANSACTION_TIMED_OUT": myanmarpayments.StatusExpired,
 		"SCHEDULER_TRANSACTION_TIMED_OUT": myanmarpayments.StatusExpired, "NEW_STATUS": myanmarpayments.StatusUnknown,
 	}
 	for status, want := range cases {
