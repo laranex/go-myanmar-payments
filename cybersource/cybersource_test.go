@@ -51,12 +51,12 @@ func callback(overrides map[string]string) *myanmarpayments.CallbackRequest {
 }
 
 func TestInitiateSignsTheHostedCheckoutFields(t *testing.T) {
-	payment, err := newGateway(t).Initiate(PaymentData{OrderID: "ORDER-1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cs/callback", ReturnURL: "https://shop.test/done", TransactionType: Authorization})
+	payment, err := newGateway(t).Initiate(PaymentData{OrderID: "ORDER-1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cs/callback", ReturnURL: "https://shop.test/done", Currency: "MMK", TransactionType: Authorization, Locale: "en-us"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	fields := payment.Values()
-	if payment.Action != SandboxURL+"/pay" || fields["reference_number"] != "ORDER-1" || fields["amount"] != "1000" ||
+	if payment.Action != ProductionURL+"/pay" || fields["reference_number"] != "ORDER-1" || fields["amount"] != "1000" ||
 		fields["transaction_type"] != "authorization" || fields["currency"] != "MMK" || fields["locale"] != "en-us" {
 		t.Fatalf("unexpected fields %v", fields)
 	}
@@ -69,7 +69,7 @@ func TestInitiateSignsTheHostedCheckoutFields(t *testing.T) {
 }
 
 func TestDecimalAmountsAndOtherCurrencies(t *testing.T) {
-	payment, err := newGateway(t).Initiate(PaymentData{OrderID: "ORDER-2", Amount: myanmarpayments.MustParseAmount("10.50"), CallbackURL: "https://shop.test/cb", Currency: "USD"})
+	payment, err := newGateway(t).Initiate(PaymentData{OrderID: "ORDER-2", Amount: myanmarpayments.MustParseAmount("10.50"), CallbackURL: "https://shop.test/cb", Currency: "USD", TransactionType: Sale, Locale: "en-us"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,14 +117,14 @@ func TestTamperedCallbackIsRejected(t *testing.T) {
 }
 
 func TestValidationAcceptsHTTPURLs(t *testing.T) {
-	data := PaymentData{OrderID: "ORDER-4", Amount: myanmarpayments.Kyat(1000), CallbackURL: "http://shop.test/cb", ReturnURL: "http://shop.test/done", CancelURL: "http://shop.test/cancel"}
+	data := PaymentData{OrderID: "ORDER-4", Amount: myanmarpayments.Kyat(1000), CallbackURL: "http://shop.test/cb", ReturnURL: "http://shop.test/done", CancelURL: "http://shop.test/cancel", Currency: "MMK", TransactionType: Sale, Locale: "en-us"}
 	if err := data.Validate(); err != nil {
 		t.Fatalf("unexpected error %v", err)
 	}
 }
 
 func TestValidationFollowsTheSecureAcceptanceFieldRules(t *testing.T) {
-	base := PaymentData{OrderID: "ORDER-1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb"}
+	base := PaymentData{OrderID: "ORDER-1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb", Currency: "MMK", TransactionType: Sale, Locale: "en-us"}
 	cases := map[string]struct {
 		mutate func(*PaymentData)
 		field  string
@@ -137,6 +137,9 @@ func TestValidationFollowsTheSecureAcceptanceFieldRules(t *testing.T) {
 		"plain en locale":      {func(d *PaymentData) { d.Locale = "en" }, "locale"},
 		"order id over 50":     {func(d *PaymentData) { d.OrderID = strings.Repeat("A", 51) }, "orderId"},
 		"unknown type":         {func(d *PaymentData) { d.TransactionType = "refund" }, "transactionType"},
+		"missing currency":     {func(d *PaymentData) { d.Currency = "" }, "currency"},
+		"missing type":         {func(d *PaymentData) { d.TransactionType = "" }, "transactionType"},
+		"missing locale":       {func(d *PaymentData) { d.Locale = " " }, "locale"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -152,7 +155,7 @@ func TestValidationFollowsTheSecureAcceptanceFieldRules(t *testing.T) {
 
 func TestCyberSourceAcceptsZeroAndAnyDecimalPlaces(t *testing.T) {
 	for _, amount := range []myanmarpayments.Amount{myanmarpayments.Kyat(0), myanmarpayments.MustParseAmount("10.505")} {
-		data := PaymentData{OrderID: "ORDER-1", Amount: amount, CallbackURL: "https://shop.test/cb"}
+		data := PaymentData{OrderID: "ORDER-1", Amount: amount, CallbackURL: "https://shop.test/cb", Currency: "MMK", TransactionType: Sale, Locale: "en-us"}
 		if err := data.Validate(); err != nil {
 			t.Fatalf("amount %s: unexpected error %v", amount, err)
 		}
@@ -160,7 +163,7 @@ func TestCyberSourceAcceptsZeroAndAnyDecimalPlaces(t *testing.T) {
 }
 
 func TestReplayedRequestFormWithUnsignedResultFieldsIsRejected(t *testing.T) {
-	payment, err := newGateway(t).Initiate(PaymentData{OrderID: "ORDER-1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb"})
+	payment, err := newGateway(t).Initiate(PaymentData{OrderID: "ORDER-1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb", Currency: "MMK", TransactionType: Sale, Locale: "en-us"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,13 +200,12 @@ func TestUnsignedAmountAndReferenceAreIgnored(t *testing.T) {
 func TestConfigFromEnvAndEndpoints(t *testing.T) {
 	env := map[string]string{
 		"CYBER_SOURCE_PROFILE_ID": "profile", "CYBER_SOURCE_ACCESS_KEY": "access", "CYBER_SOURCE_SECRET_KEY": "secret",
-		"CYBER_SOURCE_SANDBOX": "false",
 	}
 	config := ConfigFromEnv(func(key string) string { return env[key] })
-	if config.ProfileID != "profile" || config.AccessKey != "access" || config.SecretKey != "secret" || !config.Production {
+	if config.ProfileID != "profile" || config.AccessKey != "access" || config.SecretKey != "secret" {
 		t.Fatalf("unexpected config %+v", config)
 	}
-	if config.ResolvedBaseURL() != ProductionURL || (Config{}).ResolvedBaseURL() != SandboxURL || (Config{BaseURL: "https://cs.test/"}).ResolvedBaseURL() != "https://cs.test" {
+	if config.ResolvedBaseURL() != ProductionURL || (Config{BaseURL: " "}).ResolvedBaseURL() != ProductionURL || (Config{BaseURL: "https://cs.test/"}).ResolvedBaseURL() != "https://cs.test" {
 		t.Fatal("unexpected base URL")
 	}
 

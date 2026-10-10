@@ -14,7 +14,7 @@ import (
 
 func newGateway(t *testing.T, server *testutil.Server) *Gateway {
 	t.Helper()
-	config := Config{AppID: "kp123", AppKey: "secret-key", MerchantCode: "100001"}
+	config := Config{AppID: "kp123", AppKey: "secret-key", MerchantCode: "100001", TimeoutSeconds: 30}
 	if server != nil {
 		config.APIURL = server.URL
 	}
@@ -84,7 +84,7 @@ func TestPWASendsASignedPrecreateAndReturnsTheRedirectURL(t *testing.T) {
 		t.Fatal("request signature mismatch")
 	}
 
-	if !strings.HasPrefix(payment.URL, SandboxPWAURL+"?") || payment.GatewayReference != "PREPAY123" {
+	if !strings.HasPrefix(payment.URL, ProductionPWAURL+"?") || payment.GatewayReference != "PREPAY123" {
 		t.Fatalf("unexpected payment %+v", payment)
 	}
 	query, _ := url.ParseQuery(payment.URL[strings.Index(payment.URL, "?")+1:])
@@ -256,11 +256,11 @@ func TestConfigNamesAMissingKeyAndNormalisesThePWAURL(t *testing.T) {
 		t.Fatalf("expected missing app_key, got %v", err)
 	}
 	for _, pwa := range []string{"https://static.kbzpay.com/pgw/uat/pwa/#", "https://static.kbzpay.com/pgw/uat/pwa/#/"} {
-		if got := (Config{PWAURL: pwa}).ResolvedPWAURL(); got != SandboxPWAURL {
+		if got := (Config{PWAURL: pwa}).ResolvedPWAURL(); got != "https://static.kbzpay.com/pgw/uat/pwa/#/" {
 			t.Fatalf("pwa %s normalized to %s", pwa, got)
 		}
 	}
-	if (Config{Production: true}).ResolvedAPIURL() != ProductionAPIURL {
+	if (Config{}).ResolvedAPIURL() != ProductionAPIURL {
 		t.Fatal("production URL not selected")
 	}
 }

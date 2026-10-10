@@ -17,7 +17,7 @@ import (
 
 func newGateway(t *testing.T, server *testutil.Server) *Gateway {
 	t.Helper()
-	config := Config{MerchantID: "testmerchantID", SecretKey: "test-secret", MerchantName: "Shop"}
+	config := Config{MerchantID: "testmerchantID", SecretKey: "test-secret", MerchantName: "Shop", TimeToLiveSeconds: 300, TimeoutSeconds: 30}
 	if server != nil {
 		config.BaseURL = server.URL
 		config.AuthenticateURL = "https://preprodpayments.wavemoney.io"
@@ -246,10 +246,7 @@ func TestValidationAcceptsHTTPCallbackURLs(t *testing.T) {
 }
 
 func TestDocumentedHosts(t *testing.T) {
-	sandbox, production := Config{}, Config{Production: true}
-	if sandbox.ResolvedBaseURL() != SandboxURL || sandbox.ResolvedAuthenticateURL() != "https://preprodpayments.wavemoney.io" {
-		t.Fatal("unexpected sandbox hosts")
-	}
+	production := Config{}
 	if production.ResolvedBaseURL() != ProductionURL || production.ResolvedAuthenticateURL() != ProductionAuthenticateURL {
 		t.Fatal("unexpected production hosts")
 	}

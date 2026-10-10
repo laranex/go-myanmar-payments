@@ -21,7 +21,7 @@ func TestStatusReportsContextDeadlineExceeded(t *testing.T) {
 	}))
 	defer server.Close()
 
-	gateway, err := New(Config{AppID: "kp123", AppKey: "secret-key", MerchantCode: "100001", APIURL: server.URL}, nil)
+	gateway, err := New(Config{AppID: "kp123", AppKey: "secret-key", MerchantCode: "100001", TimeoutSeconds: 30, APIURL: server.URL}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestGatewayIsSafeForConcurrentUse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	gateway, err := New(Config{AppID: "kp123", AppKey: "secret-key", MerchantCode: "100001", APIURL: server.URL}, nil)
+	gateway, err := New(Config{AppID: "kp123", AppKey: "secret-key", MerchantCode: "100001", TimeoutSeconds: 30, APIURL: server.URL}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

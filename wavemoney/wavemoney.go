@@ -41,12 +41,12 @@ type Gateway struct {
 	transport *transport.Client
 }
 
-// New returns a Gateway. A nil client uses myanmarpayments.DefaultHTTPClient.
+// New returns a Gateway. A nil client uses an *http.Client with config.TimeoutSeconds.
 func New(config Config, client myanmarpayments.HTTPDoer) (*Gateway, error) {
 	if err := config.validate(); err != nil {
 		return nil, err
 	}
-	return &Gateway{config: config, transport: transport.New(client)}, nil
+	return &Gateway{config: config, transport: transport.New(client, config.TimeoutSeconds)}, nil
 }
 
 // Config returns the configuration in use.
@@ -64,7 +64,7 @@ func (g *Gateway) Initiate(ctx context.Context, data *PaymentData) (*myanmarpaym
 	}
 
 	amount := data.ResolvedAmount()
-	ttl := g.config.ResolvedTimeToLive()
+	ttl := g.config.TimeToLiveSeconds
 	// Wave documents items as [{"name": "...", "amount": 1000}] with a numeric amount; the amount
 	// text is emitted as a JSON number without passing through a float.
 	type waveItem struct {

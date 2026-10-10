@@ -18,10 +18,10 @@ import (
 
 func configured() Config {
 	return Config{
-		KBZPay:      &kbzpay.Config{AppID: "kp123", AppKey: "key", MerchantCode: "100001"},
-		WaveMoney:   &wavemoney.Config{MerchantID: "merchant", SecretKey: "secret", MerchantName: "Shop"},
-		AYAPay:      &ayapay.Config{AppKey: "app-key", AppSecret: "secret"},
-		YomaMMQR:    &yomammqr.Config{MerchantID: "M", ClientID: "client", ClientSecret: "secret", WebhookHashKey: "hash"},
+		KBZPay:      &kbzpay.Config{AppID: "kp123", AppKey: "key", MerchantCode: "100001", TimeoutSeconds: 30},
+		WaveMoney:   &wavemoney.Config{MerchantID: "merchant", SecretKey: "secret", MerchantName: "Shop", TimeToLiveSeconds: 300, TimeoutSeconds: 30},
+		AYAPay:      &ayapay.Config{AppKey: "app-key", AppSecret: "secret", TimeoutSeconds: 30},
+		YomaMMQR:    &yomammqr.Config{MerchantID: "M", ClientID: "client", ClientSecret: "secret", WebhookHashKey: "hash", APIVersion: "v1rc", TimeoutSeconds: 30},
 		CyberSource: &cybersource.Config{ProfileID: "profile", AccessKey: "access", SecretKey: "secret"},
 	}
 }
@@ -73,7 +73,7 @@ func TestAMissingGatewayNamesItsFirstKey(t *testing.T) {
 }
 
 func TestFromEnvReadsTheEnvironmentOnFirstUseAndRetriesAfterAFailure(t *testing.T) {
-	env := map[string]string{"KBZ_PAY_APP_ID": "kp123", "KBZ_PAY_APP_KEY": "key", "KBZ_PAY_SANDBOX": "false"}
+	env := map[string]string{"KBZ_PAY_APP_ID": "kp123", "KBZ_PAY_APP_KEY": "key", "MYANMAR_PAYMENTS_HTTP_TIMEOUT": "30"}
 	var mu sync.Mutex
 	gateways := FromEnv(func(key string) string {
 		mu.Lock()
@@ -90,7 +90,7 @@ func TestFromEnvReadsTheEnvironmentOnFirstUseAndRetriesAfterAFailure(t *testing.
 	env["KBZ_PAY_MERCHANT_CODE"] = "100001"
 	mu.Unlock()
 	kbz, err := gateways.KBZPay()
-	if err != nil || !kbz.Config().Production || kbz.Config().MerchantCode != "100001" {
+	if err != nil || kbz.Config().ResolvedAPIURL() != kbzpay.ProductionAPIURL || kbz.Config().MerchantCode != "100001" {
 		t.Fatalf("unexpected gateway %v", err)
 	}
 	if _, err := gateways.CyberSource(); !errors.As(err, &configErr) || configErr.Key != "profile_id" {
@@ -107,7 +107,7 @@ func TestYomaUsesTheSharedTokenCache(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sum := sha256.Sum256([]byte(yomammqr.SandboxURL + "|client"))
+	sum := sha256.Sum256([]byte(yomammqr.ProductionURL + "|client"))
 	key := "myanmar-payments.yoma-mmqr.token." + hex.EncodeToString(sum[:])
 	cache.Set(key, "cached", 0)
 	yoma.ForgetToken()

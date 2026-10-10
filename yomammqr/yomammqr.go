@@ -50,7 +50,7 @@ type tokenCall struct {
 	err   error
 }
 
-// New returns a Gateway. A nil client uses myanmarpayments.DefaultHTTPClient and a nil cache
+// New returns a Gateway. A nil client uses an *http.Client with config.TimeoutSeconds and a nil cache
 // uses an in-memory cache.
 func New(config Config, client myanmarpayments.HTTPDoer, cache myanmarpayments.TokenCache) (*Gateway, error) {
 	if err := config.validate(); err != nil {
@@ -59,7 +59,7 @@ func New(config Config, client myanmarpayments.HTTPDoer, cache myanmarpayments.T
 	if cache == nil {
 		cache = myanmarpayments.NewMemoryTokenCache()
 	}
-	return &Gateway{config: config, transport: transport.New(client), cache: cache, now: time.Now}, nil
+	return &Gateway{config: config, transport: transport.New(client, config.TimeoutSeconds), cache: cache, now: time.Now}, nil
 }
 
 // Config returns the configuration in use.
@@ -166,7 +166,7 @@ func (g *Gateway) HandleCallback(request *myanmarpayments.CallbackRequest) (*mya
 func (g *Gateway) ForgetToken() { g.cache.Delete(g.tokenCacheKey()) }
 
 func (g *Gateway) call(ctx context.Context, path string, data map[string]any, allowErrors []string) (map[string]any, error) {
-	endpoint := fmt.Sprintf("%s/payment-gateway/%s/api/%s", g.config.ResolvedBaseURL(), g.config.ResolvedAPIVersion(), path)
+	endpoint := fmt.Sprintf("%s/payment-gateway/%s/api/%s", g.config.ResolvedBaseURL(), g.config.APIVersion, path)
 
 	send := func() (transport.Response, error) {
 		token, err := g.token(ctx)

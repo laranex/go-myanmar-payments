@@ -31,7 +31,8 @@ type Config struct {
 
 // Options are shared by every gateway the facade builds.
 type Options struct {
-	// HTTPClient sends the gateways' requests; nil uses myanmarpayments.DefaultHTTPClient.
+	// HTTPClient sends the gateways' requests; nil gives each gateway an *http.Client with
+	// its config's TimeoutSeconds.
 	HTTPClient myanmarpayments.HTTPDoer
 	// TokenCache keeps Yoma MMQR's access token; nil uses one MemoryTokenCache.
 	TokenCache myanmarpayments.TokenCache
@@ -57,7 +58,7 @@ func New(config Config, options Options) *Gateways {
 }
 
 // FromEnv returns Gateways that read every gateway's configuration from environment variables
-// (KBZ_PAY_*, WAVE_MONEY_*, AYA_PAY_*, YOMA_MMQR_*, CYBER_SOURCE_*) through getenv, e.g.
+// (KBZ_PAY_*, WAVE_MONEY_*, AYA_PAY_*, YOMA_MMQR_*, CYBER_SOURCE_* and MYANMAR_PAYMENTS_HTTP_TIMEOUT) through getenv, e.g.
 // os.Getenv, when the gateway is first used.
 func FromEnv(getenv func(string) string, options Options) *Gateways {
 	return newGateways(func() Config {

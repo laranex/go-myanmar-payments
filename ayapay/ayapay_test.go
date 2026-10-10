@@ -22,7 +22,7 @@ import (
 
 func newGateway(t *testing.T, server *testutil.Server) *Gateway {
 	t.Helper()
-	config := Config{AppKey: "app-key", AppSecret: "test-secret"}
+	config := Config{AppKey: "app-key", AppSecret: "test-secret", TimeoutSeconds: 30}
 	if server != nil {
 		config.BaseURL = server.URL
 	}
@@ -77,7 +77,7 @@ func TestInitiateSignsTheFormInTheDocumentedOrder(t *testing.T) {
 
 	want := hmacHex(strings.Join([]string{"ORD123456", "1000", "app-key", "1733470212", "cart-9", "", "", "", "", "Order", "104", "kbz_pay", "QR", "https://shop.test/done"}, ":"), "test-secret")
 	checkSum, _ := payment.Field("checkSum")
-	if payment.Action != SandboxURL+"/v1/payment/request" || payment.Enctype != "multipart/form-data" || checkSum != want {
+	if payment.Action != ProductionURL+"/v1/payment/request" || payment.Enctype != "multipart/form-data" || checkSum != want {
 		t.Fatalf("unexpected payment %+v", payment)
 	}
 	if !strings.Contains(payment.HTML(), `name="checkSum" value="`+want+`"`) {

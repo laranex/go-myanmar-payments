@@ -2,13 +2,18 @@
 package env
 
 import (
-	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
+	"regexp"
 	"strconv"
 	"strings"
+
+	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
 )
 
 // Getter looks up a variable, e.g. os.Getenv.
 type Getter func(string) string
+
+// TimeoutKey is the variable every gateway that calls an API reads its HTTP timeout from.
+const TimeoutKey = "MYANMAR_PAYMENTS_HTTP_TIMEOUT"
 
 // First returns the first non-empty value among keys.
 func First(get Getter, keys ...string) string {
@@ -20,32 +25,23 @@ func First(get Getter, keys ...string) string {
 	return ""
 }
 
-// Production reads a *_SANDBOX variable and reports whether production was requested.
-// Unset or unparsable values mean sandbox.
-func Production(get Getter, sandboxKey string) bool {
-	value := strings.TrimSpace(get(sandboxKey))
-	if value == "" {
-		return false
-	}
-	sandbox, err := strconv.ParseBool(strings.ToLower(value))
-	if err != nil {
-		switch strings.ToLower(value) {
-		case "no", "off":
-			return true
-		default:
-			return false
-		}
-	}
-	return !sandbox
-}
+var wholeNumber = regexp.MustCompile(`^[+-]?[0-9]+$`)
 
-// Int reads an integer, returning def when unset or invalid.
-func Int(get Getter, key string, def int) int {
-	value, err := strconv.Atoi(strings.TrimSpace(get(key)))
-	if err != nil {
-		return def
+// Seconds reads a whole number of seconds: 0 when unset or blank, the value when it is a whole
+// number greater than 0, and -1 for anything else, so validation reports it as invalid.
+func Seconds(get Getter, key string) int {
+	value := strings.TrimSpace(get(key))
+	if value == "" {
+		return 0
 	}
-	return value
+	if !wholeNumber.MatchString(value) {
+		return -1
+	}
+	seconds, err := strconv.Atoi(value)
+	if err != nil || seconds <= 0 {
+		return -1
+	}
+	return seconds
 }
 
 // Require returns a ConfigurationError for the first blank value, given key/value pairs.
@@ -54,6 +50,17 @@ func Require(gateway string, keyValues ...string) error {
 		if strings.TrimSpace(keyValues[i+1]) == "" {
 			return &myanmarpayments.ConfigurationError{Gateway: gateway, Key: keyValues[i]}
 		}
+	}
+	return nil
+}
+
+// RequireSeconds returns a ConfigurationError when seconds is 0 (missing) or negative (invalid).
+func RequireSeconds(gateway, key string, seconds int) error {
+	switch {
+	case seconds == 0:
+		return &myanmarpayments.ConfigurationError{Gateway: gateway, Key: key}
+	case seconds < 0:
+		return &myanmarpayments.ConfigurationError{Gateway: gateway, Key: key, Invalid: true}
 	}
 	return nil
 }

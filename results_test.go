@@ -111,15 +111,12 @@ func TestErrorMessages(t *testing.T) {
 	if (&ConfigurationError{Gateway: "kbz_pay", Key: "app_key"}).Error() != "myanmarpayments: The kbz_pay configuration is missing [app_key]." {
 		t.Fatal("unexpected configuration error message")
 	}
+	if (&ConfigurationError{Gateway: "wave_money", Key: "time_to_live_in_seconds", Invalid: true}).Error() != "myanmarpayments: The wave_money configuration [time_to_live_in_seconds] must be a whole number greater than 0." {
+		t.Fatal("unexpected invalid configuration error message")
+	}
 	var apiErr *APIError
 	if errors.As(errors.New("plain"), &apiErr) {
 		t.Fatal("unexpected match")
-	}
-}
-
-func TestDefaultHTTPClientHasATimeout(t *testing.T) {
-	if DefaultHTTPClient().Timeout != 30*time.Second {
-		t.Fatal("expected a 30 second timeout")
 	}
 }
 
