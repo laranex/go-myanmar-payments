@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
 )
@@ -44,12 +45,13 @@ func server(t *testing.T, status int, body string) (*httptest.Server, *recorded)
 }
 
 func TestNewUsesTheDefaultClientWhenNil(t *testing.T) {
-	if client := New(nil); client.Doer == nil {
-		t.Fatal("New(nil) left Doer nil")
+	client := New(nil, 12)
+	if doer, ok := client.Doer.(*http.Client); !ok || doer.Timeout != 12*time.Second {
+		t.Fatalf("New(nil, 12) = %#v, want an *http.Client with a 12 second timeout", client.Doer)
 	}
 
 	custom := &http.Client{}
-	if client := New(custom); client.Doer != custom {
+	if client := New(custom, 12); client.Doer != custom {
 		t.Fatal("New(doer) did not keep the given doer")
 	}
 }
@@ -57,7 +59,7 @@ func TestNewUsesTheDefaultClientWhenNil(t *testing.T) {
 func TestPostJSONSendsACompactBodyWithoutHTMLEscaping(t *testing.T) {
 	s, got := server(t, http.StatusOK, `{"result":"SUCCESS","amount":1000.50}`)
 
-	response, err := New(nil).PostJSON(context.Background(), s.URL+"/precreate", map[string]any{"url": "https://shop.test/?a=1&b=2"}, map[string]string{"X-Custom": "yes", "Accept": "text/plain"})
+	response, err := New(nil, 30).PostJSON(context.Background(), s.URL+"/precreate", map[string]any{"url": "https://shop.test/?a=1&b=2"}, map[string]string{"X-Custom": "yes", "Accept": "text/plain"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +87,7 @@ func TestPostJSONSendsACompactBodyWithoutHTMLEscaping(t *testing.T) {
 }
 
 func TestPostJSONRejectsUnencodableData(t *testing.T) {
-	_, err := New(nil).PostJSON(context.Background(), "http://unused.test", map[string]any{"bad": make(chan int)}, nil)
+	_, err := New(nil, 30).PostJSON(context.Background(), "http://unused.test", map[string]any{"bad": make(chan int)}, nil)
 	if err == nil || !strings.Contains(err.Error(), "Could not encode the request") {
 		t.Fatalf("err = %v, want an encode error", err)
 	}
@@ -94,7 +96,7 @@ func TestPostJSONRejectsUnencodableData(t *testing.T) {
 func TestPostFormSendsURLEncodedValues(t *testing.T) {
 	s, got := server(t, http.StatusBadRequest, "not json")
 
-	response, err := New(nil).PostForm(context.Background(), s.URL+"/pay", url.Values{"amount": {"1000"}, "order id": {"A&B"}}, nil)
+	response, err := New(nil, 30).PostForm(context.Background(), s.URL+"/pay", url.Values{"amount": {"1000"}, "order id": {"A&B"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +127,7 @@ func TestNetworkFailuresBecomeAPIErrors(t *testing.T) {
 	s, _ := server(t, http.StatusOK, "{}")
 	s.Close()
 
-	_, err := New(nil).PostJSON(context.Background(), s.URL, map[string]any{}, nil)
+	_, err := New(nil, 30).PostJSON(context.Background(), s.URL, map[string]any{}, nil)
 	var apiErr *myanmarpayments.APIError
 	if !errors.As(err, &apiErr) {
 		t.Fatalf("err = %T (%v), want *APIError", err, err)
@@ -136,7 +138,7 @@ func TestNetworkFailuresBecomeAPIErrors(t *testing.T) {
 }
 
 func TestInvalidEndpointsBecomeAPIErrors(t *testing.T) {
-	_, err := New(nil).PostJSON(context.Background(), "://bad", map[string]any{}, nil)
+	_, err := New(nil, 30).PostJSON(context.Background(), "://bad", map[string]any{}, nil)
 	var apiErr *myanmarpayments.APIError
 	if !errors.As(err, &apiErr) || !strings.Contains(apiErr.Message, "Could not build request") {
 		t.Fatalf("err = %v, want a 'Could not build request' APIError", err)
@@ -148,7 +150,7 @@ func TestCanceledContextStopsTheRequest(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := New(nil).PostForm(ctx, s.URL, url.Values{}, nil)
+	_, err := New(nil, 30).PostForm(ctx, s.URL, url.Values{}, nil)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want a wrapped context.Canceled", err)
 	}
@@ -166,7 +168,7 @@ func (brokenDoer) Do(*http.Request) (*http.Response, error) {
 }
 
 func TestUnreadableBodiesBecomeAPIErrorsWithTheStatus(t *testing.T) {
-	_, err := New(brokenDoer{}).PostJSON(context.Background(), "http://unused.test", map[string]any{}, nil)
+	_, err := New(brokenDoer{}, 30).PostJSON(context.Background(), "http://unused.test", map[string]any{}, nil)
 	var apiErr *myanmarpayments.APIError
 	if !errors.As(err, &apiErr) {
 		t.Fatalf("err = %T, want *APIError", err)

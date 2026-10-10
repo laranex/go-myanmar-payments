@@ -39,38 +39,17 @@ type PaymentData struct {
 	ReturnURL string
 	// CancelURL is the page shown on cancel (override_custom_cancel_page), at most 255 characters (optional).
 	CancelURL string
-	// Currency is an ISO 4217 code; empty means MMK.
+	// Currency is an ISO 4217 code, e.g. MMK (required).
 	Currency string
-	// TransactionType is what to do with the card; empty means Sale.
+	// TransactionType is what to do with the card, e.g. Sale (required).
 	TransactionType TransactionType
-	// Locale is the hosted page language, e.g. en-us; empty means en-us.
+	// Locale is the hosted page language, e.g. en-us (required).
 	Locale string
-}
-
-func (d PaymentData) currency() string {
-	if d.Currency == "" {
-		return "MMK"
-	}
-	return d.Currency
-}
-
-func (d PaymentData) transactionType() TransactionType {
-	if d.TransactionType == "" {
-		return Sale
-	}
-	return d.TransactionType
-}
-
-func (d PaymentData) locale() string {
-	if d.Locale == "" {
-		return "en-us"
-	}
-	return d.Locale
 }
 
 // Validate checks the payment against the Secure Acceptance field reference.
 func (d PaymentData) Validate() error {
-	t := d.transactionType()
+	t := d.TransactionType
 	return validate.New().
 		Required("orderId", d.OrderID).
 		Max("orderId", d.OrderID, 50).
@@ -79,8 +58,11 @@ func (d PaymentData) Validate() error {
 		URL("callbackUrl", d.CallbackURL).Max("callbackUrl", d.CallbackURL, 255).
 		URL("returnUrl", d.ReturnURL).Max("returnUrl", d.ReturnURL, 255).
 		URL("cancelUrl", d.CancelURL).Max("cancelUrl", d.CancelURL, 255).
-		Pattern("currency", d.currency(), currencyPattern, "a three letter ISO 4217 code").
-		Pattern("locale", d.locale(), localePattern, "a locale code such as en-us").
-		When(t != Sale && t != Authorization && t != SaleAndCreateToken && t != AuthorizationAndCreateToken, "transactionType", "The transactionType field is not a supported transaction type.").
+		Required("currency", d.Currency).
+		Pattern("currency", d.Currency, currencyPattern, "a three letter ISO 4217 code").
+		Required("transactionType", string(t)).
+		When(t != "" && t != Sale && t != Authorization && t != SaleAndCreateToken && t != AuthorizationAndCreateToken, "transactionType", "The transactionType field is not a supported transaction type.").
+		Required("locale", d.Locale).
+		Pattern("locale", d.Locale, localePattern, "a locale code such as en-us").
 		Err()
 }

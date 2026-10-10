@@ -6,17 +6,14 @@ import (
 	"github.com/laranex/go-myanmar-payments/v4/internal/env"
 )
 
-// Endpoints from the WPPG documentation. Wave serves the authenticate page without the API port.
-// The documented test host no longer resolves in DNS (October 2026); set BaseURL if Wave gives you another.
+// Production endpoints from the WPPG documentation. To use UAT or a proxy, set BaseURL and
+// AuthenticateURL.
 const (
-	SandboxURL                = "https://preprodpayments.wavemoney.io:8107"
 	ProductionURL             = "https://payments.wavemoney.io"
-	SandboxAuthenticateURL    = "https://preprodpayments.wavemoney.io"
 	ProductionAuthenticateURL = "https://payments.wavemoney.io"
-	defaultTimeToLiveSeconds  = 300
 )
 
-// Config holds Wave Money credentials. The zero value of Production selects the test endpoints.
+// Config holds Wave Money credentials. Every field except the URL overrides is required.
 type Config struct {
 	// MerchantID is the merchant id Wave issued.
 	MerchantID string
@@ -24,60 +21,56 @@ type Config struct {
 	SecretKey string
 	// MerchantName is your business name, shown on Wave's payment page.
 	MerchantName string
-	// TimeToLiveSeconds is how long the customer has to pay; 0 means 300.
+	// TimeToLiveSeconds is how long the customer has to pay, a whole number greater than 0.
 	TimeToLiveSeconds int
-	// Production selects the production endpoints.
-	Production bool
+	// TimeoutSeconds is the timeout of the default HTTP client, a whole number greater than 0.
+	// A client you pass to New keeps its own timeout.
+	TimeoutSeconds int
 	// BaseURL overrides the API base URL.
 	BaseURL string
-	// AuthenticateURL overrides the host the customer is redirected to.
+	// AuthenticateURL overrides the host the customer is redirected to. Wave serves it without
+	// the API port.
 	AuthenticateURL string
 }
 
 // ConfigFromEnv reads WAVE_MONEY_MERCHANT_ID, WAVE_MONEY_SECRET_KEY, WAVE_MONEY_MERCHANT_NAME,
-// WAVE_MONEY_TIME_TO_LIVE_IN_SECONDS, WAVE_MONEY_SANDBOX, WAVE_MONEY_BASE_URL and WAVE_MONEY_AUTHENTICATE_URL.
+// WAVE_MONEY_TIME_TO_LIVE_IN_SECONDS, MYANMAR_PAYMENTS_HTTP_TIMEOUT, WAVE_MONEY_BASE_URL and
+// WAVE_MONEY_AUTHENTICATE_URL.
 func ConfigFromEnv(getenv func(string) string) Config {
 	return Config{
 		MerchantID:        env.First(getenv, "WAVE_MONEY_MERCHANT_ID"),
 		SecretKey:         env.First(getenv, "WAVE_MONEY_SECRET_KEY"),
-		MerchantName:      env.First(getenv, "WAVE_MONEY_MERCHANT_NAME", "APP_NAME"),
-		TimeToLiveSeconds: env.Int(getenv, "WAVE_MONEY_TIME_TO_LIVE_IN_SECONDS", defaultTimeToLiveSeconds),
-		Production:        env.Production(getenv, "WAVE_MONEY_SANDBOX"),
+		MerchantName:      env.First(getenv, "WAVE_MONEY_MERCHANT_NAME"),
+		TimeToLiveSeconds: env.Seconds(getenv, "WAVE_MONEY_TIME_TO_LIVE_IN_SECONDS"),
+		TimeoutSeconds:    env.Seconds(getenv, env.TimeoutKey),
 		BaseURL:           env.First(getenv, "WAVE_MONEY_BASE_URL"),
 		AuthenticateURL:   env.First(getenv, "WAVE_MONEY_AUTHENTICATE_URL"),
 	}
 }
 
 func (c Config) validate() error {
-	return env.Require("wave_money", "merchant_id", c.MerchantID, "secret_key", c.SecretKey, "merchant_name", c.MerchantName)
+	if err := env.Require("wave_money", "merchant_id", c.MerchantID, "secret_key", c.SecretKey, "merchant_name", c.MerchantName); err != nil {
+		return err
+	}
+	if err := env.RequireSeconds("wave_money", "time_to_live_in_seconds", c.TimeToLiveSeconds); err != nil {
+		return err
+	}
+	return env.RequireSeconds("wave_money", "timeout_in_seconds", c.TimeoutSeconds)
 }
 
-// ResolvedBaseURL returns the API base URL in use.
+// ResolvedBaseURL returns the API base URL in use: the override, or the production URL.
 func (c Config) ResolvedBaseURL() string {
-	if c.BaseURL != "" {
+	if strings.TrimSpace(c.BaseURL) != "" {
 		return strings.TrimRight(c.BaseURL, "/")
 	}
-	if c.Production {
-		return ProductionURL
-	}
-	return SandboxURL
+	return ProductionURL
 }
 
-// ResolvedAuthenticateURL returns the authenticate host in use.
+// ResolvedAuthenticateURL returns the authenticate host in use: the override, or the production
+// host.
 func (c Config) ResolvedAuthenticateURL() string {
-	if c.AuthenticateURL != "" {
+	if strings.TrimSpace(c.AuthenticateURL) != "" {
 		return strings.TrimRight(c.AuthenticateURL, "/")
 	}
-	if c.Production {
-		return ProductionAuthenticateURL
-	}
-	return SandboxAuthenticateURL
-}
-
-// ResolvedTimeToLive returns the time to live in seconds.
-func (c Config) ResolvedTimeToLive() int {
-	if c.TimeToLiveSeconds <= 0 {
-		return defaultTimeToLiveSeconds
-	}
-	return c.TimeToLiveSeconds
+	return ProductionAuthenticateURL
 }

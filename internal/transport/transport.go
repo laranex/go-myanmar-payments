@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
 	"github.com/laranex/go-myanmar-payments/v4/internal/values"
@@ -20,10 +21,11 @@ type Client struct {
 	Doer myanmarpayments.HTTPDoer
 }
 
-// New returns a Client using doer, or the default client when doer is nil.
-func New(doer myanmarpayments.HTTPDoer) *Client {
+// New returns a Client using doer, or an *http.Client with a timeout of timeoutSeconds when doer
+// is nil.
+func New(doer myanmarpayments.HTTPDoer, timeoutSeconds int) *Client {
 	if doer == nil {
-		doer = myanmarpayments.DefaultHTTPClient()
+		doer = &http.Client{Timeout: time.Duration(timeoutSeconds) * time.Second}
 	}
 	return &Client{Doer: doer}
 }

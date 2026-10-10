@@ -22,7 +22,7 @@ var now = time.Unix(1791393600, 0)
 
 func newGateway(t *testing.T, server *testutil.Server, cache myanmarpayments.TokenCache, mutate ...func(*Config)) *Gateway {
 	t.Helper()
-	config := Config{MerchantID: "M001", ClientID: "client", ClientSecret: "secret", WebhookHashKey: "hash-key"}
+	config := Config{MerchantID: "M001", ClientID: "client", ClientSecret: "secret", WebhookHashKey: "hash-key", APIVersion: "v1rc", TimeoutSeconds: 30}
 	if server != nil {
 		config.BaseURL = server.URL
 	}
@@ -207,7 +207,7 @@ func TestValidationAndDefaults(t *testing.T) {
 	if !errors.As(err, &invalid) || invalid.Errors["orderId"] == "" || invalid.Errors["description"] == "" {
 		t.Fatalf("expected limits to fail, got %v", err)
 	}
-	if (Config{Production: true}).ResolvedBaseURL() != "https://paymenthubapi.yomabank.com" || (Config{}).ResolvedBaseURL() != SandboxURL {
+	if (Config{}).ResolvedBaseURL() != "https://paymenthubapi.yomabank.com" {
 		t.Fatal("unexpected base URLs")
 	}
 }
@@ -298,7 +298,7 @@ func TestTokenLifetimeIsReadFromTheLeadingDigitsOfExpiresIn(t *testing.T) {
 
 func TestTokenCacheKeyIsSharedWithTheOtherSDKs(t *testing.T) {
 	gateway := newGateway(t, nil, nil)
-	sum := sha256.Sum256([]byte(SandboxURL + "|client"))
+	sum := sha256.Sum256([]byte(ProductionURL + "|client"))
 	if gateway.tokenCacheKey() != "myanmar-payments.yoma-mmqr.token."+hex.EncodeToString(sum[:]) {
 		t.Fatalf("unexpected key %s", gateway.tokenCacheKey())
 	}

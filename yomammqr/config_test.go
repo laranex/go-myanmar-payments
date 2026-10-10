@@ -10,12 +10,12 @@ import (
 func TestConfigFromEnvReadsTheYomaVariables(t *testing.T) {
 	env := map[string]string{
 		"YOMA_MMQR_MERCHANT_ID": "M001", "YOMA_MMQR_CLIENT_ID": "client", "YOMA_MMQR_CLIENT_SECRET": "secret",
-		"YOMA_MMQR_WEBHOOK_HASHKEY": "hash", "YOMA_MMQR_WEBHOOK_SECRET": "shared", "YOMA_MMQR_SANDBOX": "no",
+		"YOMA_MMQR_WEBHOOK_HASHKEY": "hash", "YOMA_MMQR_WEBHOOK_SECRET": "shared", "MYANMAR_PAYMENTS_HTTP_TIMEOUT": "30",
 		"YOMA_MMQR_BASE_URL": "https://yoma.test/", "YOMA_MMQR_API_VERSION": "v2",
 	}
 	config := ConfigFromEnv(func(key string) string { return env[key] })
-	want := Config{MerchantID: "M001", ClientID: "client", ClientSecret: "secret", WebhookHashKey: "hash", WebhookSecret: "shared", Production: true, BaseURL: "https://yoma.test/", APIVersion: "v2"}
-	if config != want || config.ResolvedBaseURL() != "https://yoma.test" || config.ResolvedAPIVersion() != "v2" {
+	want := Config{MerchantID: "M001", ClientID: "client", ClientSecret: "secret", WebhookHashKey: "hash", WebhookSecret: "shared", TimeoutSeconds: 30, BaseURL: "https://yoma.test/", APIVersion: "v2"}
+	if config != want || config.ResolvedBaseURL() != "https://yoma.test" {
 		t.Fatalf("unexpected config %+v", config)
 	}
 
@@ -26,7 +26,7 @@ func TestConfigFromEnvReadsTheYomaVariables(t *testing.T) {
 }
 
 func TestConfigDefaults(t *testing.T) {
-	if (Config{}).ResolvedBaseURL() != SandboxURL || (Config{Production: true}).ResolvedBaseURL() != ProductionURL || (Config{}).ResolvedAPIVersion() != DefaultAPIVersion {
+	if (Config{}).ResolvedBaseURL() != ProductionURL {
 		t.Fatal("unexpected defaults")
 	}
 }
@@ -35,6 +35,12 @@ func TestNewReportsTheMissingCredential(t *testing.T) {
 	var configErr *myanmarpayments.ConfigurationError
 	if _, err := New(Config{MerchantID: "M", ClientID: "c", ClientSecret: "s"}, nil, nil); !errors.As(err, &configErr) || configErr.Gateway != "yoma_mmqr" || configErr.Key != "webhook_hashkey" {
 		t.Fatalf("expected missing webhook_hashkey, got %v", err)
+	}
+	if _, err := New(Config{MerchantID: "M", ClientID: "c", ClientSecret: "s", WebhookHashKey: "h"}, nil, nil); !errors.As(err, &configErr) || configErr.Key != "api_version" {
+		t.Fatalf("expected missing api_version, got %v", err)
+	}
+	if _, err := New(Config{MerchantID: "M", ClientID: "c", ClientSecret: "s", WebhookHashKey: "h", APIVersion: "v1rc"}, nil, nil); !errors.As(err, &configErr) || configErr.Key != "timeout_in_seconds" {
+		t.Fatalf("expected missing timeout_in_seconds, got %v", err)
 	}
 }
 

@@ -25,46 +25,38 @@ func TestFirstReturnsTheFirstNonEmptyTrimmedValue(t *testing.T) {
 	}
 }
 
-func TestProductionReadsTheSandboxFlag(t *testing.T) {
-	cases := map[string]bool{
-		"":        false,
-		"  ":      false,
-		"true":    false,
-		"TRUE":    false,
-		"1":       false,
-		"yes":     false,
-		"garbage": false,
-		"false":   true,
-		"FALSE":   true,
-		"0":       true,
-		"no":      true,
-		"NO":      true,
-		"off":     true,
-		" off ":   true,
+func TestSecondsReadsAWholeNumberGreaterThanZero(t *testing.T) {
+	cases := map[string]int{
+		"":                        0,
+		"  ":                      0,
+		"30":                      30,
+		" 30 ":                    30,
+		"+30":                     30,
+		"0":                       -1,
+		"-5":                      -1,
+		"five":                    -1,
+		"1.5":                     -1,
+		"99999999999999999999999": -1,
 	}
 
 	for value, want := range cases {
-		got := Production(getter(map[string]string{"GATEWAY_SANDBOX": value}), "GATEWAY_SANDBOX")
-		if got != want {
-			t.Errorf("Production(%q) = %v, want %v", value, got, want)
+		if got := Seconds(getter(map[string]string{"TIMEOUT": value}), "TIMEOUT"); got != want {
+			t.Errorf("Seconds(%q) = %d, want %d", value, got, want)
 		}
 	}
 }
 
-func TestIntFallsBackToTheDefault(t *testing.T) {
-	get := getter(map[string]string{"TIMEOUT": " 30 ", "BAD": "thirty", "NEG": "-5"})
+func TestRequireSecondsReportsMissingAndInvalidValues(t *testing.T) {
+	if err := RequireSeconds("kbz_pay", "timeout_in_seconds", 30); err != nil {
+		t.Fatalf("RequireSeconds(30) returned %v", err)
+	}
 
-	if got := Int(get, "TIMEOUT", 10); got != 30 {
-		t.Fatalf("Int(TIMEOUT) = %d, want 30", got)
+	var configErr *myanmarpayments.ConfigurationError
+	if !errors.As(RequireSeconds("kbz_pay", "timeout_in_seconds", 0), &configErr) || configErr.Invalid || configErr.Key != "timeout_in_seconds" {
+		t.Fatalf("RequireSeconds(0) = %+v, want a missing timeout_in_seconds", configErr)
 	}
-	if got := Int(get, "NEG", 10); got != -5 {
-		t.Fatalf("Int(NEG) = %d, want -5", got)
-	}
-	if got := Int(get, "BAD", 10); got != 10 {
-		t.Fatalf("Int(BAD) = %d, want default 10", got)
-	}
-	if got := Int(get, "MISSING", 7); got != 7 {
-		t.Fatalf("Int(MISSING) = %d, want default 7", got)
+	if !errors.As(RequireSeconds("kbz_pay", "timeout_in_seconds", -1), &configErr) || !configErr.Invalid {
+		t.Fatalf("RequireSeconds(-1) = %+v, want an invalid timeout_in_seconds", configErr)
 	}
 }
 

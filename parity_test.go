@@ -1,8 +1,10 @@
 package myanmarpayments_test
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"testing"
 
 	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
@@ -33,13 +35,15 @@ func parityGateways(t *testing.T, secrets map[string]any) map[string]callbackHan
 	}
 
 	return map[string]callbackHandler{
-		"kbz_pay": must(kbzpay.New(kbzpay.Config{AppID: "kp123", AppKey: secret("kbz_pay_app_key"), MerchantCode: "100001"}, nil)),
+		"kbz_pay": must(kbzpay.New(kbzpay.Config{AppID: "kp123", AppKey: secret("kbz_pay_app_key"), MerchantCode: "100001", TimeoutSeconds: 30}, nil)),
 		"wave_money": must(wavemoney.New(wavemoney.Config{
 			MerchantID: "merchant", SecretKey: secret("wave_money_secret_key"), MerchantName: "Shop",
+			TimeToLiveSeconds: 300, TimeoutSeconds: 30,
 		}, nil)),
-		"aya_pay": must(ayapay.New(ayapay.Config{AppKey: "app-key", AppSecret: secret("aya_pay_app_secret")}, nil)),
+		"aya_pay": must(ayapay.New(ayapay.Config{AppKey: "app-key", AppSecret: secret("aya_pay_app_secret"), TimeoutSeconds: 30}, nil)),
 		"yoma_mmqr": must(yomammqr.New(yomammqr.Config{
 			MerchantID: "merchant", ClientID: "client", ClientSecret: "secret", WebhookHashKey: secret("yoma_mmqr_webhook_hashkey"),
+			APIVersion: "v1rc", TimeoutSeconds: 30,
 		}, nil, nil)),
 		"cyber_source": must(cybersource.New(cybersource.Config{
 			ProfileID: "profile", AccessKey: "access", SecretKey: secret("cyber_source_secret_key"),
@@ -125,31 +129,105 @@ func TestParityAmounts(t *testing.T) {
 	}
 }
 
-func TestParitySandbox(t *testing.T) {
-	vectors := testutil.Fixture(t, "parity/vectors.json")
+// parityConfigGateway builds gateway from environment variables and returns its resolved URLs
+// and time settings.
+func parityConfigGateway(gateway string, vars map[string]string) (map[string]string, map[string]int, error) {
+	getenv := func(key string) string { return vars[key] }
+	switch gateway {
+	case "kbz_pay":
+		g, err := kbzpay.New(kbzpay.ConfigFromEnv(getenv), nil)
+		if err != nil {
+			return nil, nil, err
+		}
+		c := g.Config()
+		return map[string]string{"api_url": c.ResolvedAPIURL(), "pwa_url": c.ResolvedPWAURL()},
+			map[string]int{"timeout_in_seconds": c.TimeoutSeconds}, nil
+	case "wave_money":
+		g, err := wavemoney.New(wavemoney.ConfigFromEnv(getenv), nil)
+		if err != nil {
+			return nil, nil, err
+		}
+		c := g.Config()
+		return map[string]string{"base_url": c.ResolvedBaseURL(), "authenticate_url": c.ResolvedAuthenticateURL()},
+			map[string]int{"time_to_live_in_seconds": c.TimeToLiveSeconds, "timeout_in_seconds": c.TimeoutSeconds}, nil
+	case "aya_pay":
+		g, err := ayapay.New(ayapay.ConfigFromEnv(getenv), nil)
+		if err != nil {
+			return nil, nil, err
+		}
+		c := g.Config()
+		return map[string]string{"base_url": c.ResolvedBaseURL()}, map[string]int{"timeout_in_seconds": c.TimeoutSeconds}, nil
+	case "yoma_mmqr":
+		g, err := yomammqr.New(yomammqr.ConfigFromEnv(getenv), nil, nil)
+		if err != nil {
+			return nil, nil, err
+		}
+		c := g.Config()
+		return map[string]string{"base_url": c.ResolvedBaseURL()}, map[string]int{"timeout_in_seconds": c.TimeoutSeconds}, nil
+	default:
+		g, err := cybersource.New(cybersource.ConfigFromEnv(getenv))
+		if err != nil {
+			return nil, nil, err
+		}
+		return map[string]string{"base_url": g.Config().ResolvedBaseURL()}, map[string]int{}, nil
+	}
+}
 
-	for _, item := range vectors["sandbox"].([]any) {
-		vector := item.(map[string]any)
-		value, sandbox := vector["value"].(string), vector["sandbox"].(bool)
-		env := func(prefix string) func(string) string {
-			return func(key string) string {
-				if key == prefix+"_SANDBOX" {
-					return value
+func TestParityConfig(t *testing.T) {
+	config := testutil.Fixture(t, "parity/vectors.json")["config"].(map[string]any)
+	baseEnv := func() map[string]string {
+		vars := map[string]string{}
+		for key, value := range config["env"].(map[string]any) {
+			vars[key] = value.(string)
+		}
+		return vars
+	}
+	seconds := config["seconds"].(map[string]any)
+	uat := config["uat"].(map[string]any)
+	uatEnv := baseEnv()
+	for key, value := range uat["env"].(map[string]any) {
+		uatEnv[key] = value.(string)
+	}
+
+	for _, check := range []struct {
+		vars map[string]string
+		urls map[string]any
+	}{{baseEnv(), config["urls"].(map[string]any)}, {uatEnv, uat["urls"].(map[string]any)}} {
+		for gateway, want := range check.urls {
+			urls, times, err := parityConfigGateway(gateway, check.vars)
+			if err != nil {
+				t.Fatalf("%s: %v", gateway, err)
+			}
+			for key, url := range want.(map[string]any) {
+				if urls[key] != url {
+					t.Errorf("%s %s = %q, want %q", gateway, key, urls[key], url)
 				}
-				return ""
+			}
+			for key, value := range times {
+				if want := seconds[key].(json.Number).String(); strconv.Itoa(value) != want {
+					t.Errorf("%s %s = %d, want %v", gateway, key, value, seconds[key])
+				}
 			}
 		}
-		production := []bool{
-			kbzpay.ConfigFromEnv(env("KBZ_PAY")).Production,
-			wavemoney.ConfigFromEnv(env("WAVE_MONEY")).Production,
-			ayapay.ConfigFromEnv(env("AYA_PAY")).Production,
-			yomammqr.ConfigFromEnv(env("YOMA_MMQR")).Production,
-			cybersource.ConfigFromEnv(env("CYBER_SOURCE")).Production,
+	}
+
+	for _, item := range config["errors"].([]any) {
+		vector := item.(map[string]any)
+		vars := baseEnv()
+		variable := vector["variable"].(string)
+		if value, ok := vector["value"].(string); ok {
+			vars[variable] = value
+		} else {
+			delete(vars, variable)
 		}
-		for i, got := range production {
-			if got == sandbox {
-				t.Errorf("gateway %d: *_SANDBOX=%q gives production=%v, want sandbox=%v", i, value, got, sandbox)
-			}
+		_, _, err := parityConfigGateway(vector["gateway"].(string), vars)
+		var configErr *myanmarpayments.ConfigurationError
+		if !errors.As(err, &configErr) {
+			t.Errorf("%s %s=%v: got %v, want a ConfigurationError", vector["gateway"], variable, vector["value"], err)
+			continue
+		}
+		if configErr.Gateway != vector["gateway"] || configErr.Key != vector["key"] || err.Error() != "myanmarpayments: "+vector["message"].(string) {
+			t.Errorf("%s %s=%v: got %+v %q, want %v", vector["gateway"], variable, vector["value"], *configErr, err, vector["message"])
 		}
 	}
 }
@@ -161,7 +239,7 @@ func TestParityYomaTokenCacheKey(t *testing.T) {
 
 	gateway, err := yomammqr.New(yomammqr.Config{
 		MerchantID: "merchant", ClientID: vector["client_id"].(string), ClientSecret: "secret",
-		WebhookHashKey: "hash", BaseURL: vector["base_url"].(string),
+		WebhookHashKey: "hash", APIVersion: "v1rc", TimeoutSeconds: 30, BaseURL: vector["base_url"].(string),
 	}, nil, cache)
 	if err != nil {
 		t.Fatal(err)
@@ -205,6 +283,11 @@ func TestParityMessages(t *testing.T) {
 	configErr := &myanmarpayments.ConfigurationError{Gateway: configuration["gateway"].(string), Key: configuration["key"].(string)}
 	if got := configErr.Error(); got != goStyle(configuration["message"].(string)) {
 		t.Errorf("configuration message %q", got)
+	}
+	invalidConfig := messages["configuration_invalid"].(map[string]any)
+	invalidErr := &myanmarpayments.ConfigurationError{Gateway: invalidConfig["gateway"].(string), Key: invalidConfig["key"].(string), Invalid: true}
+	if got := invalidErr.Error(); got != goStyle(invalidConfig["message"].(string)) {
+		t.Errorf("invalid configuration message %q", got)
 	}
 
 	amountError := func(err error) string {

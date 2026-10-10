@@ -46,12 +46,12 @@ type Gateway struct {
 	now       func() time.Time
 }
 
-// New returns a Gateway. A nil client uses myanmarpayments.DefaultHTTPClient.
+// New returns a Gateway. A nil client uses an *http.Client with config.TimeoutSeconds.
 func New(config Config, client myanmarpayments.HTTPDoer) (*Gateway, error) {
 	if err := config.validate(); err != nil {
 		return nil, err
 	}
-	return &Gateway{config: config, transport: transport.New(client), now: time.Now}, nil
+	return &Gateway{config: config, transport: transport.New(client, config.TimeoutSeconds), now: time.Now}, nil
 }
 
 // Config returns the configuration in use.

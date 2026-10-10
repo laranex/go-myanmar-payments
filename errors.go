@@ -70,13 +70,21 @@ type SignatureVerificationError struct {
 
 func (e *SignatureVerificationError) Error() string { return "myanmarpayments: " + e.Message }
 
-// ConfigurationError is returned when a gateway is missing a credential or setting it needs.
+// ConfigurationError is returned when a gateway is missing a credential or setting it needs, or
+// when a time setting is not a whole number greater than 0.
 type ConfigurationError struct {
+	// Gateway is the gateway, e.g. kbz_pay.
 	Gateway string
-	Key     string
+	// Key is the setting, e.g. app_key.
+	Key string
+	// Invalid reports that the setting is set but is not a whole number greater than 0.
+	Invalid bool
 }
 
 func (e *ConfigurationError) Error() string {
+	if e.Invalid {
+		return fmt.Sprintf("myanmarpayments: The %s configuration [%s] must be a whole number greater than 0.", e.Gateway, e.Key)
+	}
 	return fmt.Sprintf("myanmarpayments: The %s configuration is missing [%s].", e.Gateway, e.Key)
 }
 
