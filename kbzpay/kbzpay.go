@@ -90,8 +90,8 @@ func (g *Gateway) QR(ctx context.Context, data PaymentData) (*myanmarpayments.Qr
 	}
 
 	payment := &myanmarpayments.QrPayment{OrderID: data.OrderID, QRString: qrCode, Reference: order.prepayID, Raw: order.response}
-	if data.TimeToLiveSeconds != nil {
-		payment.ExpiresAt = g.now().Add(time.Duration(*data.TimeToLiveSeconds) * time.Second)
+	if ttl := g.timeToLiveSeconds(data); ttl != 0 {
+		payment.ExpiresAt = g.now().Add(time.Duration(ttl) * time.Second)
 	}
 	return payment, nil
 }
@@ -191,8 +191,8 @@ func (g *Gateway) precreate(ctx context.Context, data PaymentData, tradeType str
 	if data.Title != "" {
 		biz["title"] = data.Title
 	}
-	if data.TimeToLiveSeconds != nil {
-		biz["timeout_express"] = strconv.Itoa(*data.TimeToLiveSeconds/60) + "m"
+	if ttl := g.timeToLiveSeconds(data); ttl != 0 {
+		biz["timeout_express"] = strconv.Itoa(ttl/60) + "m"
 	}
 	if data.CallbackInfo != "" {
 		biz["callback_info"] = url.QueryEscape(data.CallbackInfo)
@@ -272,4 +272,12 @@ func randomNonce() string {
 		panic(err)
 	}
 	return hex.EncodeToString(buffer)
+}
+
+// timeToLiveSeconds returns the payment's time to live, else the configured one; 0 leaves it to KBZ.
+func (g *Gateway) timeToLiveSeconds(data PaymentData) int {
+	if data.TimeToLiveSeconds != nil {
+		return *data.TimeToLiveSeconds
+	}
+	return g.config.TimeToLiveSeconds
 }

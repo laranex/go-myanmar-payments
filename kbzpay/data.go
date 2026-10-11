@@ -24,8 +24,8 @@ type PaymentData struct {
 	// Title is the product name shown to the customer (optional).
 	Title string
 	// TimeToLiveSeconds is how long the customer has to pay before the order expires, 60 to 7200
-	// seconds in whole minutes, a multiple of 60 (optional; nil means KBZ's default of 7200). KBZ
-	// counts minutes, so 1800 is sent as 30m.
+	// seconds in whole minutes, a multiple of 60 (optional; nil uses Config.TimeToLiveSeconds, and KBZ's default
+	// of 7200 when that is 0 too). KBZ counts minutes, so 1800 is sent as 30m.
 	TimeToLiveSeconds *int
 	// CallbackInfo is free text KBZ sends back unchanged in the callback (optional).
 	CallbackInfo string

@@ -430,3 +430,60 @@ func TestParityWaveMoneyRequestOverrides(t *testing.T) {
 		}
 	}
 }
+
+type kbzDoer struct{ biz map[string]any }
+
+func (d *kbzDoer) Do(request *http.Request) (*http.Response, error) {
+	var body struct {
+		Request struct {
+			BizContent map[string]any `json:"biz_content"`
+		}
+	}
+	if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+		return nil, err
+	}
+	d.biz = body.Request.BizContent
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": {"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"Response":{"result":"SUCCESS","code":"0","msg":"success","prepay_id":"PREPAY123","qrCode":"qr"}}`)),
+	}, nil
+}
+
+func TestParityKbzPayTimeToLive(t *testing.T) {
+	vectors := testutil.Fixture(t, "parity/vectors.json")
+	vector := vectors["kbz_pay_time_to_live"].(map[string]any)
+	variable := vector["variable"].(string)
+	for _, item := range vector["cases"].([]any) {
+		c := item.(map[string]any)
+		vars := map[string]string{}
+		for key, value := range vectors["config"].(map[string]any)["env"].(map[string]any) {
+			vars[key] = value.(string)
+		}
+		if value, ok := c["config"].(string); ok {
+			vars[variable] = value
+		}
+		doer := &kbzDoer{}
+		gateway, err := kbzpay.New(kbzpay.ConfigFromEnv(func(key string) string { return vars[key] }), doer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data := kbzpay.PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb"}
+		if seconds, ok := c["payment"].(json.Number); ok {
+			ttl, err := strconv.Atoi(seconds.String())
+			if err != nil {
+				t.Fatal(err)
+			}
+			data.TimeToLiveSeconds = &ttl
+		}
+		payment, err := gateway.QR(context.Background(), data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, _ := c["timeout_express"].(string)
+		got, _ := doer.biz["timeout_express"].(string)
+		if got != want || payment.ExpiresAt.IsZero() != (want == "") {
+			t.Errorf("case %v: timeout_express %q (expires %v), want %q", c, got, payment.ExpiresAt, want)
+		}
+	}
+}
