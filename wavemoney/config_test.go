@@ -49,7 +49,6 @@ func TestNewReportsTheMissingCredential(t *testing.T) {
 		key          string
 		invalid      bool
 	}{
-		{0, 30, "time_to_live_in_seconds", false},
 		{-1, 30, "time_to_live_in_seconds", true},
 		{300, -1, "timeout_in_seconds", true},
 	} {
@@ -58,6 +57,10 @@ func TestNewReportsTheMissingCredential(t *testing.T) {
 		if _, err := New(config, nil); !errors.As(err, &configErr) || configErr.Key != tc.key || configErr.Invalid != tc.invalid {
 			t.Fatalf("%+v: got %v", tc, err)
 		}
+	}
+
+	if _, err := New(base, nil); err != nil {
+		t.Fatalf("the time to live is optional, got %v", err)
 	}
 
 	config := base

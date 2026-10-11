@@ -13,12 +13,12 @@ const (
 	ProductionPWAURL = "https://wap.kbzpay.com/pgw/pwa/#/"
 )
 
-// TimeToLiveRequirement is what a valid Config.TimeToLiveSeconds is: KBZ counts whole minutes,
+// TimeToLiveRequirement is what a valid Config.TimeToLiveMinutes is: KBZ counts whole minutes,
 // up to 120.
-const TimeToLiveRequirement = "a multiple of 60 from 60 to 7200"
+const TimeToLiveRequirement = "a whole number from 1 to 120"
 
 // Config holds KBZ Pay credentials. UAT and production issue separate credentials. Every field
-// except TimeoutSeconds, TimeToLiveSeconds and the URL overrides is required.
+// except TimeoutSeconds, TimeToLiveMinutes and the URL overrides is required.
 type Config struct {
 	// AppID is the appid KBZ issued for your merchant app.
 	AppID string
@@ -34,15 +34,15 @@ type Config struct {
 	APIURL string
 	// PWAURL overrides the PWA checkout URL. A trailing "#" or "#/" is normalized to "#/".
 	PWAURL string
-	// TimeToLiveSeconds is how long the customer has to pay each order, 60 to 7200 seconds in
-	// whole minutes (optional; 0 leaves it to KBZ, 7200). A payment's own TimeToLiveSeconds
-	// overrides it.
-	TimeToLiveSeconds int
+	// TimeToLiveMinutes is how long the customer has to pay each order, 1 to 120 minutes
+	// (optional; 0 means unset). A payment's own TimeToLiveMinutes overrides it; with neither set,
+	// PWA, QR and App return *myanmarpayments.InvalidPaymentDataError.
+	TimeToLiveMinutes int
 }
 
 // ConfigFromEnv reads KBZ_PAY_APP_ID, KBZ_PAY_APP_KEY, KBZ_PAY_MERCHANT_CODE,
 // MYANMAR_PAYMENTS_HTTP_TIMEOUT, KBZ_PAY_BASE_URL, KBZ_PAY_PWA_BASE_REDIRECT_URL and
-// KBZ_PAY_TIME_TO_LIVE_IN_SECONDS.
+// KBZ_PAY_TIME_TO_LIVE_IN_MINUTES.
 func ConfigFromEnv(getenv func(string) string) Config {
 	return Config{
 		AppID:             env.First(getenv, "KBZ_PAY_APP_ID"),
@@ -51,7 +51,7 @@ func ConfigFromEnv(getenv func(string) string) Config {
 		TimeoutSeconds:    env.Timeout(getenv),
 		APIURL:            env.First(getenv, "KBZ_PAY_BASE_URL"),
 		PWAURL:            env.First(getenv, "KBZ_PAY_PWA_BASE_REDIRECT_URL"),
-		TimeToLiveSeconds: env.Seconds(getenv, "KBZ_PAY_TIME_TO_LIVE_IN_SECONDS"),
+		TimeToLiveMinutes: env.Seconds(getenv, "KBZ_PAY_TIME_TO_LIVE_IN_MINUTES"),
 	}
 }
 
@@ -62,8 +62,8 @@ func (c Config) validate() error {
 	if err := env.OptionalSeconds("kbz_pay", "timeout_in_seconds", c.TimeoutSeconds); err != nil {
 		return err
 	}
-	if ttl := c.TimeToLiveSeconds; ttl != 0 && (ttl < 60 || ttl > 7200 || ttl%60 != 0) {
-		return &myanmarpayments.ConfigurationError{Gateway: "kbz_pay", Key: "time_to_live_in_seconds", Invalid: true, Requirement: TimeToLiveRequirement}
+	if ttl := c.TimeToLiveMinutes; ttl != 0 && (ttl < 1 || ttl > 120) {
+		return &myanmarpayments.ConfigurationError{Gateway: "kbz_pay", Key: "time_to_live_in_minutes", Invalid: true, Requirement: TimeToLiveRequirement}
 	}
 	return nil
 }

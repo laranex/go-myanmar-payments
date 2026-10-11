@@ -450,40 +450,89 @@ func (d *kbzDoer) Do(request *http.Request) (*http.Response, error) {
 	}, nil
 }
 
+// parityEnv returns the shared config env without variable, then with it set to value when value
+// is a string (a JSON null leaves it unset).
+func parityEnv(vectors map[string]any, variable string, value any) func(string) string {
+	vars := map[string]string{}
+	for key, v := range vectors["config"].(map[string]any)["env"].(map[string]any) {
+		if key != variable {
+			vars[key] = v.(string)
+		}
+	}
+	if text, ok := value.(string); ok {
+		vars[variable] = text
+	}
+	return func(key string) string { return vars[key] }
+}
+
+// noRequestDoer fails the test when a request is sent.
+type noRequestDoer struct{ t *testing.T }
+
+func (d noRequestDoer) Do(request *http.Request) (*http.Response, error) {
+	d.t.Errorf("unexpected request to %s", request.URL)
+	return nil, errors.New("no request expected")
+}
+
+// assertOnlyError checks err is an *InvalidPaymentDataError holding exactly field: message.
+func assertOnlyError(t *testing.T, err error, field, message string) {
+	t.Helper()
+	var invalid *myanmarpayments.InvalidPaymentDataError
+	if !errors.As(err, &invalid) || len(invalid.Errors) != 1 || invalid.Errors[field] != message {
+		t.Errorf("got %v, want only %s: %s", err, field, message)
+	}
+}
+
 func TestParityKbzPayTimeToLive(t *testing.T) {
 	vectors := testutil.Fixture(t, "parity/vectors.json")
 	vector := vectors["kbz_pay_time_to_live"].(map[string]any)
 	variable := vector["variable"].(string)
 	for _, item := range vector["cases"].([]any) {
 		c := item.(map[string]any)
-		vars := map[string]string{}
-		for key, value := range vectors["config"].(map[string]any)["env"].(map[string]any) {
-			vars[key] = value.(string)
-		}
-		if value, ok := c["config"].(string); ok {
-			vars[variable] = value
-		}
 		doer := &kbzDoer{}
-		gateway, err := kbzpay.New(kbzpay.ConfigFromEnv(func(key string) string { return vars[key] }), doer)
+		gateway, err := kbzpay.New(kbzpay.ConfigFromEnv(parityEnv(vectors, variable, c["config"])), doer)
 		if err != nil {
 			t.Fatal(err)
 		}
 		data := kbzpay.PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb"}
-		if seconds, ok := c["payment"].(json.Number); ok {
-			ttl, err := strconv.Atoi(seconds.String())
+		if minutes, ok := c["payment"].(json.Number); ok {
+			ttl, err := strconv.Atoi(minutes.String())
 			if err != nil {
 				t.Fatal(err)
 			}
-			data.TimeToLiveSeconds = &ttl
+			data.TimeToLiveMinutes = &ttl
 		}
 		payment, err := gateway.QR(context.Background(), data)
 		if err != nil {
 			t.Fatal(err)
 		}
-		want, _ := c["timeout_express"].(string)
-		got, _ := doer.biz["timeout_express"].(string)
-		if got != want || payment.ExpiresAt.IsZero() != (want == "") {
-			t.Errorf("case %v: timeout_express %q (expires %v), want %q", c, got, payment.ExpiresAt, want)
+		if got, _ := doer.biz["timeout_express"].(string); got != c["timeout_express"] || payment.ExpiresAt.IsZero() {
+			t.Errorf("case %v: timeout_express %q (expires %v)", c, got, payment.ExpiresAt)
 		}
+	}
+
+	missing := vector["missing"].(map[string]any)
+	for _, value := range missing["configs"].([]any) {
+		gateway, err := kbzpay.New(kbzpay.ConfigFromEnv(parityEnv(vectors, variable, value)), noRequestDoer{t})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = gateway.QR(context.Background(), kbzpay.PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb"})
+		assertOnlyError(t, err, missing["field"].(string), missing["message"].(string))
+	}
+}
+
+func TestParityWaveMoneyTimeToLiveMissing(t *testing.T) {
+	vectors := testutil.Fixture(t, "parity/vectors.json")
+	vector := vectors["wave_money_time_to_live_missing"].(map[string]any)
+	for _, value := range vector["configs"].([]any) {
+		gateway, err := wavemoney.New(wavemoney.ConfigFromEnv(parityEnv(vectors, vector["variable"].(string), value)), noRequestDoer{t})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = gateway.Initiate(context.Background(), &wavemoney.PaymentData{
+			OrderID: "100", CallbackURL: "https://shop.test/cb", ReturnURL: "https://shop.test/done", Description: "Order 100",
+			Items: []wavemoney.Item{{Name: "Shoes", Amount: myanmarpayments.Kyat(1000)}},
+		})
+		assertOnlyError(t, err, vector["field"].(string), vector["message"].(string))
 	}
 }

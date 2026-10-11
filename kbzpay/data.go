@@ -23,10 +23,10 @@ type PaymentData struct {
 	CallbackURL string
 	// Title is the product name shown to the customer (optional).
 	Title string
-	// TimeToLiveSeconds is how long the customer has to pay before the order expires, 60 to 7200
-	// seconds in whole minutes, a multiple of 60 (optional; nil uses Config.TimeToLiveSeconds, and KBZ's default
-	// of 7200 when that is 0 too). KBZ counts minutes, so 1800 is sent as 30m.
-	TimeToLiveSeconds *int
+	// TimeToLiveMinutes is how long the customer has to pay before the order expires, 1 to 120
+	// minutes (optional; nil uses Config.TimeToLiveMinutes, and one of the two is required). It is
+	// sent to KBZ as timeout_express, e.g. 30m.
+	TimeToLiveMinutes *int
 	// CallbackInfo is free text KBZ sends back unchanged in the callback (optional).
 	CallbackInfo string
 }
@@ -42,8 +42,7 @@ func (d PaymentData) Validate() error {
 		URL("callbackUrl", d.CallbackURL).
 		Max("callbackUrl", d.CallbackURL, 512).
 		When(strings.Contains(d.CallbackURL, "?"), "callbackUrl", "The callbackUrl field must not contain a query string.").
-		Between("timeToLiveSeconds", d.TimeToLiveSeconds, 60, 7200).
-		When(d.TimeToLiveSeconds != nil && *d.TimeToLiveSeconds%60 != 0, "timeToLiveSeconds", "The timeToLiveSeconds field must be a multiple of 60.").
+		Between("timeToLiveMinutes", d.TimeToLiveMinutes, 1, 120).
 		Max("callbackInfo", url.QueryEscape(d.CallbackInfo), 512).
 		Err()
 }

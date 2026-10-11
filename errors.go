@@ -72,7 +72,7 @@ func (e *SignatureVerificationError) Error() string { return "myanmarpayments: "
 
 // ConfigurationError is returned when a gateway is missing a credential or setting it needs, or
 // when a time setting is out of range (a whole number greater than 0, or for KBZ Pay's time to
-// live a multiple of 60 from 60 to 7200).
+// live a whole number from 1 to 120).
 type ConfigurationError struct {
 	// Gateway is the gateway, e.g. kbz_pay.
 	Gateway string

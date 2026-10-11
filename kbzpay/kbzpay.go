@@ -89,11 +89,10 @@ func (g *Gateway) QR(ctx context.Context, data PaymentData) (*myanmarpayments.Qr
 		return nil, &myanmarpayments.APIError{Message: "KBZ Pay did not return a QR code.", Raw: order.response}
 	}
 
-	payment := &myanmarpayments.QrPayment{OrderID: data.OrderID, QRString: qrCode, Reference: order.prepayID, Raw: order.response}
-	if ttl := g.timeToLiveSeconds(data); ttl != 0 {
-		payment.ExpiresAt = g.now().Add(time.Duration(ttl) * time.Second)
-	}
-	return payment, nil
+	return &myanmarpayments.QrPayment{
+		OrderID: data.OrderID, QRString: qrCode, Reference: order.prepayID, Raw: order.response,
+		ExpiresAt: g.now().Add(time.Duration(g.timeToLiveMinutes(data)) * time.Minute),
+	}, nil
 }
 
 // App creates an order and returns the signed values your mobile app passes to KBZPay.startPay().
@@ -179,6 +178,12 @@ func (g *Gateway) precreate(ctx context.Context, data PaymentData, tradeType str
 	if err := data.Validate(); err != nil {
 		return order{}, err
 	}
+	ttl := g.timeToLiveMinutes(data)
+	if ttl == 0 {
+		return order{}, &myanmarpayments.InvalidPaymentDataError{Errors: map[string]string{
+			"timeToLiveMinutes": "The timeToLiveMinutes field is required when the kbz_pay configuration has no [time_to_live_in_minutes].",
+		}}
+	}
 
 	biz := map[string]string{
 		"appid":          g.config.AppID,
@@ -191,9 +196,7 @@ func (g *Gateway) precreate(ctx context.Context, data PaymentData, tradeType str
 	if data.Title != "" {
 		biz["title"] = data.Title
 	}
-	if ttl := g.timeToLiveSeconds(data); ttl != 0 {
-		biz["timeout_express"] = strconv.Itoa(ttl/60) + "m"
-	}
+	biz["timeout_express"] = strconv.Itoa(ttl) + "m"
 	if data.CallbackInfo != "" {
 		biz["callback_info"] = url.QueryEscape(data.CallbackInfo)
 	}
@@ -274,10 +277,10 @@ func randomNonce() string {
 	return hex.EncodeToString(buffer)
 }
 
-// timeToLiveSeconds returns the payment's time to live, else the configured one; 0 leaves it to KBZ.
-func (g *Gateway) timeToLiveSeconds(data PaymentData) int {
-	if data.TimeToLiveSeconds != nil {
-		return *data.TimeToLiveSeconds
+// timeToLiveMinutes returns the payment's time to live, else the configured one; 0 means neither is set.
+func (g *Gateway) timeToLiveMinutes(data PaymentData) int {
+	if data.TimeToLiveMinutes != nil {
+		return *data.TimeToLiveMinutes
 	}
-	return g.config.TimeToLiveSeconds
+	return g.config.TimeToLiveMinutes
 }

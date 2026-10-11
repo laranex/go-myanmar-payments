@@ -41,7 +41,8 @@ type PaymentData struct {
 	// use Config.MerchantName; a name made only of whitespace is rejected.
 	MerchantName string
 	// TimeToLiveSeconds is how long the customer has to pay this payment, a whole number greater
-	// than 0 (optional; nil means Config.TimeToLiveSeconds). 0 and negative values are rejected.
+	// than 0 (optional; nil means Config.TimeToLiveSeconds, and one of the two is required). 0 and
+	// negative values are rejected.
 	TimeToLiveSeconds *int
 }
 

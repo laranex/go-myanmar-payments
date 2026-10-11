@@ -23,7 +23,7 @@ Requires Go 1.22+ and uses only the standard library. Import the root as `myanma
 
 ## Configure
 
-`payments.FromEnv(os.Getenv, payments.Options{})` reads `KBZ_PAY_*`, `WAVE_MONEY_*`, `AYA_PAY_*` (or `AYA_PGW_*`), `YOMA_MMQR_*` and `CYBER_SOURCE_*` (the same variables as the PHP, Node and Python SDKs), plus the optional `MYANMAR_PAYMENTS_HTTP_TIMEOUT` (seconds, default 30) for every gateway that calls an API. URLs default to each gateway's production endpoints; to test against UAT, set the URL overrides (`KBZ_PAY_BASE_URL`, `KBZ_PAY_PWA_BASE_REDIRECT_URL`, `WAVE_MONEY_BASE_URL`, `WAVE_MONEY_AUTHENTICATE_URL`, `AYA_PAY_BASE_URL`, `YOMA_MMQR_BASE_URL`, `CYBER_SOURCE_BASE_URL`) to the UAT URLs. `TimeoutSeconds` (KBZ, Wave, AYA, Yoma) is optional: 0 or an unset variable uses `myanmarpayments.DefaultTimeoutSeconds` (30); a negative or non-whole value is rejected. KBZ's `TimeToLiveSeconds` (`KBZ_PAY_TIME_TO_LIVE_IN_SECONDS`) is optional: seconds each order stays payable, a multiple of 60 from 60 to 7200 (0 leaves it to KBZ, 7200); a payment's `TimeToLiveSeconds` overrides it. Every other setting is required: credentials, Wave's `MerchantName` and `TimeToLiveSeconds`, and Yoma's `APIVersion` (e.g. `v1rc`).
+`payments.FromEnv(os.Getenv, payments.Options{})` reads `KBZ_PAY_*`, `WAVE_MONEY_*`, `AYA_PAY_*` (or `AYA_PGW_*`), `YOMA_MMQR_*` and `CYBER_SOURCE_*` (the same variables as the PHP, Node and Python SDKs), plus the optional `MYANMAR_PAYMENTS_HTTP_TIMEOUT` (seconds, default 30) for every gateway that calls an API. URLs default to each gateway's production endpoints; to test against UAT, set the URL overrides (`KBZ_PAY_BASE_URL`, `KBZ_PAY_PWA_BASE_REDIRECT_URL`, `WAVE_MONEY_BASE_URL`, `WAVE_MONEY_AUTHENTICATE_URL`, `AYA_PAY_BASE_URL`, `YOMA_MMQR_BASE_URL`, `CYBER_SOURCE_BASE_URL`) to the UAT URLs. `TimeoutSeconds` (KBZ, Wave, AYA, Yoma) is optional: 0 or an unset variable uses `myanmarpayments.DefaultTimeoutSeconds` (30); a negative or non-whole value is rejected. The time to live is required from the payment or the config: KBZ's `TimeToLiveMinutes` (`KBZ_PAY_TIME_TO_LIVE_IN_MINUTES`, 1 to 120 minutes) and Wave's `TimeToLiveSeconds` (`WAVE_MONEY_TIME_TO_LIVE_IN_SECONDS`, greater than 0) are optional defaults that a payment's own `TimeToLiveMinutes` / `TimeToLiveSeconds` overrides; with neither set, the call returns `*InvalidPaymentDataError` before sending anything. Every other setting is required: credentials, Wave's `MerchantName`, and Yoma's `APIVersion` (e.g. `v1rc`).
 
 ```go
 gateways := payments.FromEnv(os.Getenv, payments.Options{}) // create once, share across requests
@@ -43,7 +43,7 @@ Amounts are `myanmarpayments.Kyat(1000)` or `ParseAmount("1000.50")` (`MustParse
 
 ### Start a payment
 
-Each gateway takes its `PaymentData` struct (`wavemoney` with `[]wavemoney.Item`, `ayapay` with an `ayapay.Method`, `cybersource` with the required `Currency` (e.g. `MMK`), `Locale` (e.g. `en-us`) and `TransactionType` (e.g. `cybersource.Sale`); KBZ's optional `TimeToLiveSeconds` is an `*int`, 60 to 7200 in whole minutes) and returns a typed result:
+Each gateway takes its `PaymentData` struct (`wavemoney` with `[]wavemoney.Item`, `ayapay` with an `ayapay.Method`, `cybersource` with the required `Currency` (e.g. `MMK`), `Locale` (e.g. `en-us`) and `TransactionType` (e.g. `cybersource.Sale`); KBZ's optional `TimeToLiveMinutes` is an `*int`, 1 to 120) and returns a typed result:
 
 ```go
 payment, err := kbz.PWA(ctx, kbzpay.PaymentData{
@@ -57,7 +57,7 @@ if err != nil {
 http.Redirect(w, r, payment.URL, http.StatusFound)
 ```
 
-- `*RedirectPayment` (`URL`) from `kbz.PWA(ctx, data)` and `wave.Initiate(ctx, &data)`. Wave fills `data.MerchantReferenceID` when empty; store it. Wave's optional `MerchantName` (`string`, empty uses the config) and `TimeToLiveSeconds` (`*int`, nil uses the config, 0 is rejected) override the configured values for that payment only.
+- `*RedirectPayment` (`URL`) from `kbz.PWA(ctx, data)` and `wave.Initiate(ctx, &data)`. Wave fills `data.MerchantReferenceID` when empty; store it. Wave's optional `MerchantName` (`string`, empty uses the config) and `TimeToLiveSeconds` (`*int`, nil uses the config, required when the config has none, 0 is rejected) override the configured values for that payment only.
 - `*FormPayment` from `aya.Initiate(data)` and `cs.Initiate(data)` (no network call): write `payment.HTML()` for an auto-submitting page, or render `Action`, `Fields` and `Enctype` yourself.
 - `*QrPayment` from `kbz.QR(ctx, data)` (encode `QRString`) and `yoma.Initiate(ctx, data)` (`QRImageDataURI("image/png")`, `ExpiresAt`, `Reference`). A Yoma QR lives `yomammqr.QRLifetime` (120 seconds); renew it with `yoma.RenewQR(ctx, orderID)`.
 - `*AppPayment` from `kbz.App(ctx, data)`: JSON-encode it (`orderId`, `orderInfo`, `sign`, `signType`) for your mobile app.

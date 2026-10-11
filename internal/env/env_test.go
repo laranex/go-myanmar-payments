@@ -46,20 +46,6 @@ func TestSecondsReadsAWholeNumberGreaterThanZero(t *testing.T) {
 	}
 }
 
-func TestRequireSecondsReportsMissingAndInvalidValues(t *testing.T) {
-	if err := RequireSeconds("wave_money", "time_to_live_in_seconds", 300); err != nil {
-		t.Fatalf("RequireSeconds(300) returned %v", err)
-	}
-
-	var configErr *myanmarpayments.ConfigurationError
-	if !errors.As(RequireSeconds("wave_money", "time_to_live_in_seconds", 0), &configErr) || configErr.Invalid || configErr.Key != "time_to_live_in_seconds" {
-		t.Fatalf("RequireSeconds(0) = %+v, want a missing time_to_live_in_seconds", configErr)
-	}
-	if !errors.As(RequireSeconds("wave_money", "time_to_live_in_seconds", -1), &configErr) || !configErr.Invalid {
-		t.Fatalf("RequireSeconds(-1) = %+v, want an invalid time_to_live_in_seconds", configErr)
-	}
-}
-
 func TestOptionalSecondsReportsOnlyInvalidValues(t *testing.T) {
 	for _, seconds := range []int{0, 30} {
 		if err := OptionalSeconds("kbz_pay", "timeout_in_seconds", seconds); err != nil {

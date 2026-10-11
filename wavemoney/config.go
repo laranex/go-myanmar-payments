@@ -13,8 +13,8 @@ const (
 	ProductionAuthenticateURL = "https://payments.wavemoney.io"
 )
 
-// Config holds Wave Money credentials. Every field except TimeoutSeconds and the URL overrides is
-// required.
+// Config holds Wave Money credentials. Every field except TimeToLiveSeconds, TimeoutSeconds and the
+// URL overrides is required.
 type Config struct {
 	// MerchantID is the merchant id Wave issued.
 	MerchantID string
@@ -22,7 +22,9 @@ type Config struct {
 	SecretKey string
 	// MerchantName is your business name, shown on Wave's payment page.
 	MerchantName string
-	// TimeToLiveSeconds is how long the customer has to pay, a whole number greater than 0.
+	// TimeToLiveSeconds is how long the customer has to pay, a whole number greater than 0
+	// (optional; 0 means unset). A payment's own TimeToLiveSeconds overrides it; with neither set,
+	// Initiate returns *myanmarpayments.InvalidPaymentDataError.
 	TimeToLiveSeconds int
 	// TimeoutSeconds is the timeout of the default HTTP client, a whole number greater than 0
 	// (optional; 0 means myanmarpayments.DefaultTimeoutSeconds, 30). A client you pass to New
@@ -54,7 +56,7 @@ func (c Config) validate() error {
 	if err := env.Require("wave_money", "merchant_id", c.MerchantID, "secret_key", c.SecretKey, "merchant_name", c.MerchantName); err != nil {
 		return err
 	}
-	if err := env.RequireSeconds("wave_money", "time_to_live_in_seconds", c.TimeToLiveSeconds); err != nil {
+	if err := env.OptionalSeconds("wave_money", "time_to_live_in_seconds", c.TimeToLiveSeconds); err != nil {
 		return err
 	}
 	return env.OptionalSeconds("wave_money", "timeout_in_seconds", c.TimeoutSeconds)

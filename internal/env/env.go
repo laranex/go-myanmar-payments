@@ -68,17 +68,6 @@ func Require(gateway string, keyValues ...string) error {
 	return nil
 }
 
-// RequireSeconds returns a ConfigurationError when seconds is 0 (missing) or negative (invalid).
-func RequireSeconds(gateway, key string, seconds int) error {
-	switch {
-	case seconds == 0:
-		return &myanmarpayments.ConfigurationError{Gateway: gateway, Key: key}
-	case seconds < 0:
-		return &myanmarpayments.ConfigurationError{Gateway: gateway, Key: key, Invalid: true}
-	}
-	return nil
-}
-
 // OptionalSeconds returns a ConfigurationError when seconds is negative (invalid); 0 means the
 // setting is unset and its default applies.
 func OptionalSeconds(gateway, key string, seconds int) error {
