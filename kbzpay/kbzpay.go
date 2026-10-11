@@ -13,6 +13,7 @@ import (
 	"time"
 
 	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
+	"github.com/laranex/go-myanmar-payments/v4/internal/env"
 	"github.com/laranex/go-myanmar-payments/v4/internal/transport"
 	"github.com/laranex/go-myanmar-payments/v4/internal/values"
 )
@@ -35,11 +36,13 @@ type Gateway struct {
 	nonce     func() string
 }
 
-// New returns a Gateway. A nil client uses an *http.Client with config.TimeoutSeconds.
+// New returns a Gateway. A nil client uses an *http.Client with config.TimeoutSeconds, or
+// myanmarpayments.DefaultTimeoutSeconds when it is 0.
 func New(config Config, client myanmarpayments.HTTPDoer) (*Gateway, error) {
 	if err := config.validate(); err != nil {
 		return nil, err
 	}
+	config.TimeoutSeconds = env.TimeoutSeconds(config.TimeoutSeconds)
 
 	return &Gateway{
 		config:    config,

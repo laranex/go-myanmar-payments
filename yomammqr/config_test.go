@@ -39,8 +39,15 @@ func TestNewReportsTheMissingCredential(t *testing.T) {
 	if _, err := New(Config{MerchantID: "M", ClientID: "c", ClientSecret: "s", WebhookHashKey: "h"}, nil, nil); !errors.As(err, &configErr) || configErr.Key != "api_version" {
 		t.Fatalf("expected missing api_version, got %v", err)
 	}
-	if _, err := New(Config{MerchantID: "M", ClientID: "c", ClientSecret: "s", WebhookHashKey: "h", APIVersion: "v1rc"}, nil, nil); !errors.As(err, &configErr) || configErr.Key != "timeout_in_seconds" {
-		t.Fatalf("expected missing timeout_in_seconds, got %v", err)
+	if _, err := New(Config{MerchantID: "M", ClientID: "c", ClientSecret: "s", WebhookHashKey: "h", APIVersion: "v1rc", TimeoutSeconds: -1}, nil, nil); !errors.As(err, &configErr) || configErr.Key != "timeout_in_seconds" || !configErr.Invalid {
+		t.Fatalf("expected invalid timeout_in_seconds, got %v", err)
+	}
+}
+
+func TestNewDefaultsTheTimeout(t *testing.T) {
+	gateway, err := New(Config{MerchantID: "M", ClientID: "c", ClientSecret: "s", WebhookHashKey: "h", APIVersion: "v1rc"}, nil, nil)
+	if err != nil || gateway.Config().TimeoutSeconds != myanmarpayments.DefaultTimeoutSeconds {
+		t.Fatalf("expected the default timeout, got %v", err)
 	}
 }
 

@@ -9,7 +9,8 @@ import (
 // ProductionURL is Yoma Bank's production payment hub. To use UAT or a proxy, set BaseURL.
 const ProductionURL = "https://paymenthubapi.yomabank.com"
 
-// Config holds Yoma MMQR credentials. Every field except WebhookSecret and BaseURL is required.
+// Config holds Yoma MMQR credentials. Every field except TimeoutSeconds, WebhookSecret and
+// BaseURL is required.
 type Config struct {
 	// MerchantID is the merchant id Yoma issued.
 	MerchantID string
@@ -21,8 +22,9 @@ type Config struct {
 	WebhookHashKey string
 	// APIVersion is the {version} segment of the API paths, e.g. v1rc.
 	APIVersion string
-	// TimeoutSeconds is the timeout of the default HTTP client, a whole number greater than 0.
-	// A client you pass to New keeps its own timeout.
+	// TimeoutSeconds is the timeout of the default HTTP client, a whole number greater than 0
+	// (optional; 0 means myanmarpayments.DefaultTimeoutSeconds, 30). A client you pass to New
+	// keeps its own timeout.
 	TimeoutSeconds int
 	// WebhookSecret is the secret you shared with Yoma; when set, callbacks must carry it in X-Webhook-Secret.
 	WebhookSecret string
@@ -40,7 +42,7 @@ func ConfigFromEnv(getenv func(string) string) Config {
 		ClientSecret:   env.First(getenv, "YOMA_MMQR_CLIENT_SECRET"),
 		WebhookHashKey: env.First(getenv, "YOMA_MMQR_WEBHOOK_HASHKEY"),
 		APIVersion:     env.First(getenv, "YOMA_MMQR_API_VERSION"),
-		TimeoutSeconds: env.Seconds(getenv, env.TimeoutKey),
+		TimeoutSeconds: env.Timeout(getenv),
 		WebhookSecret:  env.First(getenv, "YOMA_MMQR_WEBHOOK_SECRET"),
 		BaseURL:        env.First(getenv, "YOMA_MMQR_BASE_URL"),
 	}
@@ -50,7 +52,7 @@ func (c Config) validate() error {
 	if err := env.Require("yoma_mmqr", "merchant_id", c.MerchantID, "client_id", c.ClientID, "client_secret", c.ClientSecret, "webhook_hashkey", c.WebhookHashKey, "api_version", c.APIVersion); err != nil {
 		return err
 	}
-	return env.RequireSeconds("yoma_mmqr", "timeout_in_seconds", c.TimeoutSeconds)
+	return env.OptionalSeconds("yoma_mmqr", "timeout_in_seconds", c.TimeoutSeconds)
 }
 
 // ResolvedBaseURL returns the base URL in use: the override, or the production URL.

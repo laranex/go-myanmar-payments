@@ -44,6 +44,20 @@ func Seconds(get Getter, key string) int {
 	return seconds
 }
 
+// Timeout reads TimeoutKey like Seconds, but returns myanmarpayments.DefaultTimeoutSeconds when
+// it is unset or blank.
+func Timeout(get Getter) int {
+	return TimeoutSeconds(Seconds(get, TimeoutKey))
+}
+
+// TimeoutSeconds returns seconds, or myanmarpayments.DefaultTimeoutSeconds when it is 0 (unset).
+func TimeoutSeconds(seconds int) int {
+	if seconds == 0 {
+		return myanmarpayments.DefaultTimeoutSeconds
+	}
+	return seconds
+}
+
 // Require returns a ConfigurationError for the first blank value, given key/value pairs.
 func Require(gateway string, keyValues ...string) error {
 	for i := 0; i+1 < len(keyValues); i += 2 {
@@ -60,6 +74,15 @@ func RequireSeconds(gateway, key string, seconds int) error {
 	case seconds == 0:
 		return &myanmarpayments.ConfigurationError{Gateway: gateway, Key: key}
 	case seconds < 0:
+		return &myanmarpayments.ConfigurationError{Gateway: gateway, Key: key, Invalid: true}
+	}
+	return nil
+}
+
+// OptionalSeconds returns a ConfigurationError when seconds is negative (invalid); 0 means the
+// setting is unset and its default applies.
+func OptionalSeconds(gateway, key string, seconds int) error {
+	if seconds < 0 {
 		return &myanmarpayments.ConfigurationError{Gateway: gateway, Key: key, Invalid: true}
 	}
 	return nil

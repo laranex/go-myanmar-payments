@@ -18,6 +18,7 @@ import (
 	"time"
 
 	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
+	"github.com/laranex/go-myanmar-payments/v4/internal/env"
 	"github.com/laranex/go-myanmar-payments/v4/internal/transport"
 	"github.com/laranex/go-myanmar-payments/v4/internal/values"
 )
@@ -50,12 +51,13 @@ type tokenCall struct {
 	err   error
 }
 
-// New returns a Gateway. A nil client uses an *http.Client with config.TimeoutSeconds and a nil cache
-// uses an in-memory cache.
+// New returns a Gateway. A nil client uses an *http.Client with config.TimeoutSeconds (or
+// myanmarpayments.DefaultTimeoutSeconds when it is 0) and a nil cache uses an in-memory cache.
 func New(config Config, client myanmarpayments.HTTPDoer, cache myanmarpayments.TokenCache) (*Gateway, error) {
 	if err := config.validate(); err != nil {
 		return nil, err
 	}
+	config.TimeoutSeconds = env.TimeoutSeconds(config.TimeoutSeconds)
 	if cache == nil {
 		cache = myanmarpayments.NewMemoryTokenCache()
 	}

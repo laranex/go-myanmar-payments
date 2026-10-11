@@ -9,14 +9,16 @@ import (
 // ProductionURL is the AYA Payment Gateway's production host. To use UAT or a proxy, set BaseURL.
 const ProductionURL = "https://pgw.ayainnovation.com"
 
-// Config holds AYA Payment Gateway credentials. Every field except BaseURL is required.
+// Config holds AYA Payment Gateway credentials. Every field except TimeoutSeconds and BaseURL is
+// required.
 type Config struct {
 	// AppKey is the public application key, sent with every request.
 	AppKey string
 	// AppSecret signs requests and verifies callbacks.
 	AppSecret string
-	// TimeoutSeconds is the timeout of the default HTTP client, a whole number greater than 0.
-	// A client you pass to New keeps its own timeout.
+	// TimeoutSeconds is the timeout of the default HTTP client, a whole number greater than 0
+	// (optional; 0 means myanmarpayments.DefaultTimeoutSeconds, 30). A client you pass to New
+	// keeps its own timeout.
 	TimeoutSeconds int
 	// BaseURL overrides the gateway base URL.
 	BaseURL string
@@ -28,7 +30,7 @@ func ConfigFromEnv(getenv func(string) string) Config {
 	return Config{
 		AppKey:         env.First(getenv, "AYA_PAY_APP_KEY", "AYA_PGW_APP_KEY"),
 		AppSecret:      env.First(getenv, "AYA_PAY_APP_SECRET", "AYA_PGW_APP_SECRET"),
-		TimeoutSeconds: env.Seconds(getenv, env.TimeoutKey),
+		TimeoutSeconds: env.Timeout(getenv),
 		BaseURL:        env.First(getenv, "AYA_PAY_BASE_URL", "AYA_PGW_BASE_URL"),
 	}
 }
@@ -37,7 +39,7 @@ func (c Config) validate() error {
 	if err := env.Require("aya_pay", "app_key", c.AppKey, "app_secret", c.AppSecret); err != nil {
 		return err
 	}
-	return env.RequireSeconds("aya_pay", "timeout_in_seconds", c.TimeoutSeconds)
+	return env.OptionalSeconds("aya_pay", "timeout_in_seconds", c.TimeoutSeconds)
 }
 
 // ResolvedBaseURL returns the base URL in use: the override, or the production URL.

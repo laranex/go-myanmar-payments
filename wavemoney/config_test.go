@@ -29,7 +29,7 @@ func TestConfigFromEnvReadsTheWaveVariables(t *testing.T) {
 
 func TestConfigDefaults(t *testing.T) {
 	config := ConfigFromEnv(func(key string) string { return map[string]string{"APP_NAME": "Shop"}[key] })
-	if config != (Config{}) {
+	if config != (Config{TimeoutSeconds: myanmarpayments.DefaultTimeoutSeconds}) {
 		t.Fatalf("unexpected defaults %+v", config)
 	}
 	production := Config{}
@@ -51,7 +51,6 @@ func TestNewReportsTheMissingCredential(t *testing.T) {
 	}{
 		{0, 30, "time_to_live_in_seconds", false},
 		{-1, 30, "time_to_live_in_seconds", true},
-		{300, 0, "timeout_in_seconds", false},
 		{300, -1, "timeout_in_seconds", true},
 	} {
 		config := base
@@ -59,5 +58,12 @@ func TestNewReportsTheMissingCredential(t *testing.T) {
 		if _, err := New(config, nil); !errors.As(err, &configErr) || configErr.Key != tc.key || configErr.Invalid != tc.invalid {
 			t.Fatalf("%+v: got %v", tc, err)
 		}
+	}
+
+	config := base
+	config.TimeToLiveSeconds = 300
+	gateway, err := New(config, nil)
+	if err != nil || gateway.Config().TimeoutSeconds != myanmarpayments.DefaultTimeoutSeconds {
+		t.Fatalf("expected the default timeout, got %v", err)
 	}
 }

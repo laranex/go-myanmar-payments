@@ -33,13 +33,26 @@ func TestConfigDefaultsToProduction(t *testing.T) {
 	}
 }
 
+func TestTimeoutDefaultsTo30Seconds(t *testing.T) {
+	for _, value := range []string{"", "   "} {
+		config := ConfigFromEnv(func(key string) string {
+			return map[string]string{"MYANMAR_PAYMENTS_HTTP_TIMEOUT": value}[key]
+		})
+		if config.TimeoutSeconds != myanmarpayments.DefaultTimeoutSeconds {
+			t.Fatalf("%q: got %d, want the default", value, config.TimeoutSeconds)
+		}
+	}
+
+	gateway, err := New(Config{AppID: "app", AppKey: "key", MerchantCode: "m"}, nil)
+	if err != nil || gateway.Config().TimeoutSeconds != 30 {
+		t.Fatalf("expected the default timeout, got %v", err)
+	}
+}
+
 func TestNewReportsTheMissingCredential(t *testing.T) {
 	var configErr *myanmarpayments.ConfigurationError
 	if _, err := New(Config{AppID: "app", AppKey: "key"}, nil); !errors.As(err, &configErr) || configErr.Gateway != "kbz_pay" || configErr.Key != "merchant_code" {
 		t.Fatalf("expected missing merchant_code, got %v", err)
-	}
-	if _, err := New(Config{AppID: "app", AppKey: "key", MerchantCode: "m"}, nil); !errors.As(err, &configErr) || configErr.Key != "timeout_in_seconds" || configErr.Invalid {
-		t.Fatalf("expected missing timeout_in_seconds, got %v", err)
 	}
 	if _, err := New(Config{AppID: "app", AppKey: "key", MerchantCode: "m", TimeoutSeconds: -1}, nil); !errors.As(err, &configErr) || configErr.Key != "timeout_in_seconds" || !configErr.Invalid {
 		t.Fatalf("expected invalid timeout_in_seconds, got %v", err)

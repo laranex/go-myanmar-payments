@@ -47,16 +47,44 @@ func TestSecondsReadsAWholeNumberGreaterThanZero(t *testing.T) {
 }
 
 func TestRequireSecondsReportsMissingAndInvalidValues(t *testing.T) {
-	if err := RequireSeconds("kbz_pay", "timeout_in_seconds", 30); err != nil {
-		t.Fatalf("RequireSeconds(30) returned %v", err)
+	if err := RequireSeconds("wave_money", "time_to_live_in_seconds", 300); err != nil {
+		t.Fatalf("RequireSeconds(300) returned %v", err)
 	}
 
 	var configErr *myanmarpayments.ConfigurationError
-	if !errors.As(RequireSeconds("kbz_pay", "timeout_in_seconds", 0), &configErr) || configErr.Invalid || configErr.Key != "timeout_in_seconds" {
-		t.Fatalf("RequireSeconds(0) = %+v, want a missing timeout_in_seconds", configErr)
+	if !errors.As(RequireSeconds("wave_money", "time_to_live_in_seconds", 0), &configErr) || configErr.Invalid || configErr.Key != "time_to_live_in_seconds" {
+		t.Fatalf("RequireSeconds(0) = %+v, want a missing time_to_live_in_seconds", configErr)
 	}
-	if !errors.As(RequireSeconds("kbz_pay", "timeout_in_seconds", -1), &configErr) || !configErr.Invalid {
-		t.Fatalf("RequireSeconds(-1) = %+v, want an invalid timeout_in_seconds", configErr)
+	if !errors.As(RequireSeconds("wave_money", "time_to_live_in_seconds", -1), &configErr) || !configErr.Invalid {
+		t.Fatalf("RequireSeconds(-1) = %+v, want an invalid time_to_live_in_seconds", configErr)
+	}
+}
+
+func TestOptionalSecondsReportsOnlyInvalidValues(t *testing.T) {
+	for _, seconds := range []int{0, 30} {
+		if err := OptionalSeconds("kbz_pay", "timeout_in_seconds", seconds); err != nil {
+			t.Fatalf("OptionalSeconds(%d) returned %v", seconds, err)
+		}
+	}
+
+	var configErr *myanmarpayments.ConfigurationError
+	if !errors.As(OptionalSeconds("kbz_pay", "timeout_in_seconds", -1), &configErr) || !configErr.Invalid || configErr.Key != "timeout_in_seconds" {
+		t.Fatalf("OptionalSeconds(-1) = %+v, want an invalid timeout_in_seconds", configErr)
+	}
+}
+
+func TestTimeoutDefaultsWhenUnsetOrBlank(t *testing.T) {
+	cases := map[string]int{"": myanmarpayments.DefaultTimeoutSeconds, "   ": 30, "45": 45, "0": -1, "thirty": -1}
+	for value, want := range cases {
+		if got := Timeout(getter(map[string]string{TimeoutKey: value})); got != want {
+			t.Errorf("Timeout(%q) = %d, want %d", value, got, want)
+		}
+	}
+	if got := Timeout(getter(map[string]string{})); got != 30 {
+		t.Errorf("Timeout(unset) = %d, want 30", got)
+	}
+	if got := TimeoutSeconds(15); got != 15 {
+		t.Errorf("TimeoutSeconds(15) = %d, want 15", got)
 	}
 }
 

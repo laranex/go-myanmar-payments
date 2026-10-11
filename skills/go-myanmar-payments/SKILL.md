@@ -23,16 +23,16 @@ Requires Go 1.22+ and uses only the standard library. Import the root as `myanma
 
 ## Configure
 
-`payments.FromEnv(os.Getenv, payments.Options{})` reads `KBZ_PAY_*`, `WAVE_MONEY_*`, `AYA_PAY_*` (or `AYA_PGW_*`), `YOMA_MMQR_*` and `CYBER_SOURCE_*` (the same variables as the PHP, Node and Python SDKs), plus `MYANMAR_PAYMENTS_HTTP_TIMEOUT` (seconds) for every gateway that calls an API. URLs default to each gateway's production endpoints; to test against UAT, set the URL overrides (`KBZ_PAY_BASE_URL`, `KBZ_PAY_PWA_BASE_REDIRECT_URL`, `WAVE_MONEY_BASE_URL`, `WAVE_MONEY_AUTHENTICATE_URL`, `AYA_PAY_BASE_URL`, `YOMA_MMQR_BASE_URL`, `CYBER_SOURCE_BASE_URL`) to the UAT URLs. Every other setting is required: credentials, `TimeoutSeconds` (KBZ, Wave, AYA, Yoma), Wave's `MerchantName` and `TimeToLiveSeconds`, and Yoma's `APIVersion` (e.g. `v1rc`).
+`payments.FromEnv(os.Getenv, payments.Options{})` reads `KBZ_PAY_*`, `WAVE_MONEY_*`, `AYA_PAY_*` (or `AYA_PGW_*`), `YOMA_MMQR_*` and `CYBER_SOURCE_*` (the same variables as the PHP, Node and Python SDKs), plus the optional `MYANMAR_PAYMENTS_HTTP_TIMEOUT` (seconds, default 30) for every gateway that calls an API. URLs default to each gateway's production endpoints; to test against UAT, set the URL overrides (`KBZ_PAY_BASE_URL`, `KBZ_PAY_PWA_BASE_REDIRECT_URL`, `WAVE_MONEY_BASE_URL`, `WAVE_MONEY_AUTHENTICATE_URL`, `AYA_PAY_BASE_URL`, `YOMA_MMQR_BASE_URL`, `CYBER_SOURCE_BASE_URL`) to the UAT URLs. `TimeoutSeconds` (KBZ, Wave, AYA, Yoma) is optional: 0 or an unset variable uses `myanmarpayments.DefaultTimeoutSeconds` (30); a negative or non-whole value is rejected. Every other setting is required: credentials, Wave's `MerchantName` and `TimeToLiveSeconds`, and Yoma's `APIVersion` (e.g. `v1rc`).
 
 ```go
 gateways := payments.FromEnv(os.Getenv, payments.Options{}) // create once, share across requests
 kbz, err := gateways.KBZPay() // also WaveMoney(), AYAPay(), YomaMMQR(), CyberSource()
 ```
 
-- Or build one gateway: `kbzpay.New(kbzpay.Config{AppID: "...", AppKey: "...", MerchantCode: "...", TimeoutSeconds: 30}, nil)` or `kbzpay.New(kbzpay.ConfigFromEnv(os.Getenv), nil)`.
+- Or build one gateway: `kbzpay.New(kbzpay.Config{AppID: "...", AppKey: "...", MerchantCode: "..."}, nil)` or `kbzpay.New(kbzpay.ConfigFromEnv(os.Getenv), nil)`.
 - Or pass the settings directly: `payments.New(payments.Config{KBZPay: &kbzpay.Config{...}}, payments.Options{})`.
-- Options: `HTTPClient` is any `myanmarpayments.HTTPDoer` (nil uses an `*http.Client` with the config's `TimeoutSeconds`; a client you pass keeps its own timeout). Yoma and the facade also take a `TokenCache` for the access token (nil uses `NewMemoryTokenCache()`; back it with Redis when you run several processes).
+- Options: `HTTPClient` is any `myanmarpayments.HTTPDoer` (nil uses an `*http.Client` with the config's `TimeoutSeconds`, 30 by default; a client you pass keeps its own timeout). Yoma and the facade also take a `TokenCache` for the access token (nil uses `NewMemoryTokenCache()`; back it with Redis when you run several processes).
 - A missing setting returns `*myanmarpayments.ConfigurationError` (`Gateway`, `Key`); a time setting that is not a whole number greater than 0 sets `Invalid`.
 
 ## Use

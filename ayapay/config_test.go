@@ -23,7 +23,7 @@ func TestConfigFromEnvReadsTheAYAVariables(t *testing.T) {
 func TestConfigFromEnvFallsBackToThePGWNames(t *testing.T) {
 	env := map[string]string{"AYA_PGW_APP_KEY": "key", "AYA_PGW_APP_SECRET": "secret", "AYA_PGW_BASE_URL": "https://pgw.test"}
 	config := ConfigFromEnv(func(key string) string { return env[key] })
-	if config.AppKey != "key" || config.AppSecret != "secret" || config.TimeoutSeconds != 0 || config.BaseURL != "https://pgw.test" {
+	if config.AppKey != "key" || config.AppSecret != "secret" || config.TimeoutSeconds != myanmarpayments.DefaultTimeoutSeconds || config.BaseURL != "https://pgw.test" {
 		t.Fatalf("unexpected config %+v", config)
 	}
 	if (Config{}).ResolvedBaseURL() != ProductionURL {
@@ -36,8 +36,15 @@ func TestNewReportsTheMissingCredential(t *testing.T) {
 	if _, err := New(Config{AppKey: "key"}, nil); !errors.As(err, &configErr) || configErr.Gateway != "aya_pay" || configErr.Key != "app_secret" {
 		t.Fatalf("expected missing app_secret, got %v", err)
 	}
-	if _, err := New(Config{AppKey: "key", AppSecret: "s"}, nil); !errors.As(err, &configErr) || configErr.Key != "timeout_in_seconds" {
-		t.Fatalf("expected missing timeout_in_seconds, got %v", err)
+	if _, err := New(Config{AppKey: "key", AppSecret: "s", TimeoutSeconds: -1}, nil); !errors.As(err, &configErr) || configErr.Key != "timeout_in_seconds" || !configErr.Invalid {
+		t.Fatalf("expected invalid timeout_in_seconds, got %v", err)
+	}
+}
+
+func TestNewDefaultsTheTimeout(t *testing.T) {
+	gateway, err := New(Config{AppKey: "key", AppSecret: "s"}, nil)
+	if err != nil || gateway.Config().TimeoutSeconds != myanmarpayments.DefaultTimeoutSeconds {
+		t.Fatalf("expected the default timeout, got %v", err)
 	}
 }
 

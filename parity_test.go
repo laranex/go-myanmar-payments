@@ -232,6 +232,34 @@ func TestParityConfig(t *testing.T) {
 	}
 }
 
+func TestParityDefaultTimeout(t *testing.T) {
+	config := testutil.Fixture(t, "parity/vectors.json")["config"].(map[string]any)
+	vector := config["default_timeout"].(map[string]any)
+	variable := vector["variable"].(string)
+	want := vector["timeout_in_seconds"].(json.Number).String()
+
+	for _, value := range vector["values"].([]any) {
+		vars := map[string]string{}
+		for key, value := range config["env"].(map[string]any) {
+			vars[key] = value.(string)
+		}
+		if value, ok := value.(string); ok {
+			vars[variable] = value
+		} else {
+			delete(vars, variable)
+		}
+		for _, gateway := range []string{"kbz_pay", "wave_money", "aya_pay", "yoma_mmqr"} {
+			_, times, err := parityConfigGateway(gateway, vars)
+			if err != nil {
+				t.Fatalf("%s %s=%v: %v", gateway, variable, value, err)
+			}
+			if got := strconv.Itoa(times["timeout_in_seconds"]); got != want {
+				t.Errorf("%s %s=%v: timeout_in_seconds = %s, want %s", gateway, variable, value, got, want)
+			}
+		}
+	}
+}
+
 func TestParityYomaTokenCacheKey(t *testing.T) {
 	vector := testutil.Fixture(t, "parity/vectors.json")["yoma_mmqr_token_cache_key"].(map[string]any)
 	cache := myanmarpayments.NewMemoryTokenCache()

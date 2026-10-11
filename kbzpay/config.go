@@ -13,7 +13,7 @@ const (
 )
 
 // Config holds KBZ Pay credentials. UAT and production issue separate credentials. Every field
-// except the URL overrides is required.
+// except TimeoutSeconds and the URL overrides is required.
 type Config struct {
 	// AppID is the appid KBZ issued for your merchant app.
 	AppID string
@@ -21,8 +21,9 @@ type Config struct {
 	AppKey string
 	// MerchantCode is the merch_code KBZ issued.
 	MerchantCode string
-	// TimeoutSeconds is the timeout of the default HTTP client, a whole number greater than 0.
-	// A client you pass to New keeps its own timeout.
+	// TimeoutSeconds is the timeout of the default HTTP client, a whole number greater than 0
+	// (optional; 0 means myanmarpayments.DefaultTimeoutSeconds, 30). A client you pass to New
+	// keeps its own timeout.
 	TimeoutSeconds int
 	// APIURL overrides the API base URL, e.g. the UAT one or a proxy.
 	APIURL string
@@ -37,7 +38,7 @@ func ConfigFromEnv(getenv func(string) string) Config {
 		AppID:          env.First(getenv, "KBZ_PAY_APP_ID"),
 		AppKey:         env.First(getenv, "KBZ_PAY_APP_KEY"),
 		MerchantCode:   env.First(getenv, "KBZ_PAY_MERCHANT_CODE"),
-		TimeoutSeconds: env.Seconds(getenv, env.TimeoutKey),
+		TimeoutSeconds: env.Timeout(getenv),
 		APIURL:         env.First(getenv, "KBZ_PAY_BASE_URL"),
 		PWAURL:         env.First(getenv, "KBZ_PAY_PWA_BASE_REDIRECT_URL"),
 	}
@@ -47,7 +48,7 @@ func (c Config) validate() error {
 	if err := env.Require("kbz_pay", "app_id", c.AppID, "app_key", c.AppKey, "merchant_code", c.MerchantCode); err != nil {
 		return err
 	}
-	return env.RequireSeconds("kbz_pay", "timeout_in_seconds", c.TimeoutSeconds)
+	return env.OptionalSeconds("kbz_pay", "timeout_in_seconds", c.TimeoutSeconds)
 }
 
 // ResolvedAPIURL returns the API base URL in use: the override, or the production URL.
