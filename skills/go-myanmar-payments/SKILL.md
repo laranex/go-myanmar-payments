@@ -43,7 +43,7 @@ Amounts are `myanmarpayments.Kyat(1000)` or `ParseAmount("1000.50")` (`MustParse
 
 ### Start a payment
 
-Each gateway takes its `PaymentData` struct (`wavemoney` with `[]wavemoney.Item`, `ayapay` with an `ayapay.Method`, `cybersource` with the required `Currency` (e.g. `MMK`), `Locale` (e.g. `en-us`) and `TransactionType` (e.g. `cybersource.Sale`); KBZ's optional `TimeoutMinutes` is an `*int`) and returns a typed result:
+Each gateway takes its `PaymentData` struct (`wavemoney` with `[]wavemoney.Item`, `ayapay` with an `ayapay.Method`, `cybersource` with the required `Currency` (e.g. `MMK`), `Locale` (e.g. `en-us`) and `TransactionType` (e.g. `cybersource.Sale`); KBZ's optional `TimeToLiveSeconds` is an `*int`, 60 to 7200 in whole minutes) and returns a typed result:
 
 ```go
 payment, err := kbz.PWA(ctx, kbzpay.PaymentData{

@@ -90,8 +90,8 @@ func (g *Gateway) QR(ctx context.Context, data PaymentData) (*myanmarpayments.Qr
 	}
 
 	payment := &myanmarpayments.QrPayment{OrderID: data.OrderID, QRString: qrCode, Reference: order.prepayID, Raw: order.response}
-	if data.TimeoutMinutes != nil {
-		payment.ExpiresAt = g.now().Add(time.Duration(*data.TimeoutMinutes) * time.Minute)
+	if data.TimeToLiveSeconds != nil {
+		payment.ExpiresAt = g.now().Add(time.Duration(*data.TimeToLiveSeconds) * time.Second)
 	}
 	return payment, nil
 }
@@ -191,8 +191,8 @@ func (g *Gateway) precreate(ctx context.Context, data PaymentData, tradeType str
 	if data.Title != "" {
 		biz["title"] = data.Title
 	}
-	if data.TimeoutMinutes != nil {
-		biz["timeout_express"] = strconv.Itoa(*data.TimeoutMinutes) + "m"
+	if data.TimeToLiveSeconds != nil {
+		biz["timeout_express"] = strconv.Itoa(*data.TimeToLiveSeconds/60) + "m"
 	}
 	if data.CallbackInfo != "" {
 		biz["callback_info"] = url.QueryEscape(data.CallbackInfo)

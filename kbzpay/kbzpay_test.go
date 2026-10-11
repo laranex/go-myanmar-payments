@@ -134,7 +134,7 @@ func TestAppReturnsSignedOrderInfo(t *testing.T) {
 func TestOptionalFieldsGoInBizContentAndDecimalsAreKept(t *testing.T) {
 	server := testutil.NewServer(t, precreate(nil))
 
-	_, err := newGateway(t, server).PWA(context.Background(), PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.MustParseAmount("1000.50"), CallbackURL: "https://shop.test/cb", Title: "Shoes", TimeoutMinutes: minutes(30), CallbackInfo: "cart=9"})
+	_, err := newGateway(t, server).PWA(context.Background(), PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.MustParseAmount("1000.50"), CallbackURL: "https://shop.test/cb", Title: "Shoes", TimeToLiveSeconds: seconds(1800), CallbackInfo: "cart=9"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,15 +229,16 @@ func TestValidationFollowsKBZLimits(t *testing.T) {
 		data  PaymentData
 		field string
 	}{
-		"order id with dashes":    {PaymentData{OrderID: "ORDER-1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb"}, "orderId"},
-		"order id too long":       {PaymentData{OrderID: strings.Repeat("a", 41), Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb"}, "orderId"},
-		"zero amount":             {PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(0), CallbackURL: "https://shop.test/cb"}, "amount"},
-		"three decimals":          {PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.MustParseAmount("1000.505"), CallbackURL: "https://shop.test/cb"}, "amount"},
-		"negative":                {PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(-5), CallbackURL: "https://shop.test/cb"}, "amount"},
-		"callback url with query": {PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb?x=1"}, "callbackUrl"},
-		"timeout above 120":       {PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb", TimeoutMinutes: minutes(121)}, "timeoutMinutes"},
-		"timeout of zero":         {PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb", TimeoutMinutes: minutes(0)}, "timeoutMinutes"},
-		"negative timeout":        {PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb", TimeoutMinutes: minutes(-1)}, "timeoutMinutes"},
+		"order id with dashes":           {PaymentData{OrderID: "ORDER-1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb"}, "orderId"},
+		"order id too long":              {PaymentData{OrderID: strings.Repeat("a", 41), Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb"}, "orderId"},
+		"zero amount":                    {PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(0), CallbackURL: "https://shop.test/cb"}, "amount"},
+		"three decimals":                 {PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.MustParseAmount("1000.505"), CallbackURL: "https://shop.test/cb"}, "amount"},
+		"negative":                       {PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(-5), CallbackURL: "https://shop.test/cb"}, "amount"},
+		"callback url with query":        {PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb?x=1"}, "callbackUrl"},
+		"time to live above 120 minutes": {PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb", TimeToLiveSeconds: seconds(7260)}, "timeToLiveSeconds"},
+		"time to live of zero":           {PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb", TimeToLiveSeconds: seconds(0)}, "timeToLiveSeconds"},
+		"negative time to live":          {PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb", TimeToLiveSeconds: seconds(-60)}, "timeToLiveSeconds"},
+		"time to live in part minutes":   {PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb", TimeToLiveSeconds: seconds(90)}, "timeToLiveSeconds"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -275,7 +276,7 @@ func TestKBZAmountErrorsNameTheGateway(t *testing.T) {
 
 func TestQRExpiresWithTheTimeoutAndNeedsAQRCode(t *testing.T) {
 	withTimeout := data
-	withTimeout.TimeoutMinutes = minutes(15)
+	withTimeout.TimeToLiveSeconds = seconds(900)
 	payment, err := newGateway(t, testutil.NewServer(t, precreate(map[string]any{"qrCode": "kbzpay://qr/abc"}))).QR(context.Background(), withTimeout)
 	if err != nil {
 		t.Fatal(err)
@@ -301,20 +302,21 @@ func TestMissingPrepayIDAndInvalidDataAreErrors(t *testing.T) {
 	}
 }
 
-func minutes(n int) *int { return &n }
+func seconds(n int) *int { return &n }
 
-func TestTimeoutMinutesOfZeroIsRejectedWithTheSharedMessage(t *testing.T) {
-	vectors := testutil.Fixture(t, "parity/vectors.json")
-	want := vectors["messages"].(map[string]any)["kbz_timeout_zero"]
-	withZero := data
-	withZero.TimeoutMinutes = minutes(0)
-	var invalid *myanmarpayments.InvalidPaymentDataError
-	if err := withZero.Validate(); !errors.As(err, &invalid) || invalid.Errors["timeoutMinutes"] != want {
-		t.Fatalf("unexpected error %v", err)
+func TestTimeToLiveIsRejectedWithTheSharedMessages(t *testing.T) {
+	messages := testutil.Fixture(t, "parity/vectors.json")["messages"].(map[string]any)
+	for value, key := range map[int]string{0: "kbz_time_to_live_range", 90: "kbz_time_to_live_minutes"} {
+		invalidData := data
+		invalidData.TimeToLiveSeconds = seconds(value)
+		var invalid *myanmarpayments.InvalidPaymentDataError
+		if err := invalidData.Validate(); !errors.As(err, &invalid) || invalid.Errors["timeToLiveSeconds"] != messages[key] {
+			t.Fatalf("time to live %d: unexpected error %v", value, err)
+		}
 	}
 	withBounds := data
-	for _, n := range []int{1, 120} {
-		withBounds.TimeoutMinutes = minutes(n)
+	for _, n := range []int{60, 7200} {
+		withBounds.TimeToLiveSeconds = seconds(n)
 		if err := withBounds.Validate(); err != nil {
 			t.Fatalf("timeout %d: unexpected error %v", n, err)
 		}
