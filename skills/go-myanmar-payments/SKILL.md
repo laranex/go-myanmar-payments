@@ -57,7 +57,7 @@ if err != nil {
 http.Redirect(w, r, payment.URL, http.StatusFound)
 ```
 
-- `*RedirectPayment` (`URL`) from `kbz.PWA(ctx, data)` and `wave.Initiate(ctx, &data)`. Wave fills `data.MerchantReferenceID` when empty; store it.
+- `*RedirectPayment` (`URL`) from `kbz.PWA(ctx, data)` and `wave.Initiate(ctx, &data)`. Wave fills `data.MerchantReferenceID` when empty; store it. Wave's optional `MerchantName` (`string`, empty uses the config) and `TimeToLiveSeconds` (`*int`, nil uses the config, 0 is rejected) override the configured values for that payment only.
 - `*FormPayment` from `aya.Initiate(data)` and `cs.Initiate(data)` (no network call): write `payment.HTML()` for an auto-submitting page, or render `Action`, `Fields` and `Enctype` yourself.
 - `*QrPayment` from `kbz.QR(ctx, data)` (encode `QRString`) and `yoma.Initiate(ctx, data)` (`QRImageDataURI("image/png")`, `ExpiresAt`, `Reference`). A Yoma QR lives `yomammqr.QRLifetime` (120 seconds); renew it with `yoma.RenewQR(ctx, orderID)`.
 - `*AppPayment` from `kbz.App(ctx, data)`: JSON-encode it (`orderId`, `orderInfo`, `sign`, `signType`) for your mobile app.

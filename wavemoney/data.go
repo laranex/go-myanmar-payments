@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
+	"strings"
 
 	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
 	"github.com/laranex/go-myanmar-payments/v4/internal/validate"
@@ -36,6 +37,12 @@ type PaymentData struct {
 	// Initiate fills it with a random id when empty; store it, because Wave's callback may
 	// omit OrderID but always carries this.
 	MerchantReferenceID string
+	// MerchantName is the business name shown on Wave's page for this payment. Leave it empty to
+	// use Config.MerchantName; a name made only of whitespace is rejected.
+	MerchantName string
+	// TimeToLiveSeconds is how long the customer has to pay this payment, a whole number greater
+	// than 0 (optional; nil means Config.TimeToLiveSeconds). 0 and negative values are rejected.
+	TimeToLiveSeconds *int
 }
 
 // ResolvedAmount returns Amount, or the sum of the items when Amount is unset. Items are summed
@@ -73,7 +80,9 @@ func (d PaymentData) Validate() error {
 	v.Required("returnUrl", d.ReturnURL).
 		URL("returnUrl", d.ReturnURL).
 		Required("description", d.Description).
-		When(len(d.Items) == 0, "items", "The items field must have at least one item.")
+		When(len(d.Items) == 0, "items", "The items field must have at least one item.").
+		When(d.MerchantName != "" && strings.TrimSpace(d.MerchantName) == "", "merchantName", "The merchantName field is required.").
+		When(d.TimeToLiveSeconds != nil && *d.TimeToLiveSeconds < 1, "timeToLiveSeconds", "The timeToLiveSeconds field must be greater than 0.")
 	for i, item := range d.Items {
 		v.Required(fmt.Sprintf("items.%d.name", i), item.Name).
 			Amount(fmt.Sprintf("items.%d.amount", i), item.Amount, validate.AmountRule{Gateway: "Wave Money"})

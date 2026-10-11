@@ -57,7 +57,8 @@ func (g *Gateway) Config() Config { return g.config }
 
 // Initiate creates a payment request and returns Wave's page to redirect the customer to.
 // Once data passes validation it fills data.MerchantReferenceID with a random id when empty, so
-// store it afterwards. Invalid data is returned untouched.
+// store it afterwards. Invalid data is returned untouched. A non-empty data.MerchantName and a
+// non-nil data.TimeToLiveSeconds override the configured values for this payment only.
 func (g *Gateway) Initiate(ctx context.Context, data *PaymentData) (*myanmarpayments.RedirectPayment, error) {
 	if err := data.Validate(); err != nil {
 		return nil, err
@@ -68,6 +69,13 @@ func (g *Gateway) Initiate(ctx context.Context, data *PaymentData) (*myanmarpaym
 
 	amount := data.ResolvedAmount()
 	ttl := g.config.TimeToLiveSeconds
+	if data.TimeToLiveSeconds != nil {
+		ttl = *data.TimeToLiveSeconds
+	}
+	merchantName := g.config.MerchantName
+	if data.MerchantName != "" {
+		merchantName = data.MerchantName
+	}
 	// Wave documents items as [{"name": "...", "amount": 1000}] with a numeric amount; the amount
 	// text is emitted as a JSON number without passing through a float.
 	type waveItem struct {
@@ -96,7 +104,7 @@ func (g *Gateway) Initiate(ctx context.Context, data *PaymentData) (*myanmarpaym
 	form.Set("backend_result_url", data.CallbackURL)
 	form.Set("amount", amount.String())
 	form.Set("payment_description", data.Description)
-	form.Set("merchant_name", g.config.MerchantName)
+	form.Set("merchant_name", merchantName)
 	form.Set("items", string(items))
 	form.Set("hash", g.hash([]string{strconv.Itoa(ttl), g.config.MerchantID, data.OrderID, amount.String(), data.CallbackURL, data.MerchantReferenceID}))
 

@@ -1,10 +1,14 @@
 package myanmarpayments_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 
 	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
@@ -339,6 +343,90 @@ func TestParityMessages(t *testing.T) {
 	} {
 		if got != want {
 			t.Errorf("amount message %q, want %q", got, want)
+		}
+	}
+}
+
+// formDoer is a fake HTTP client that records the posted form and answers with Wave's success
+// response.
+type formDoer struct{ form url.Values }
+
+func (d *formDoer) Do(request *http.Request) (*http.Response, error) {
+	body, err := io.ReadAll(request.Body)
+	if err != nil {
+		return nil, err
+	}
+	if d.form, err = url.ParseQuery(string(body)); err != nil {
+		return nil, err
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": {"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"message":"success","transaction_id":"T1"}`)),
+	}, nil
+}
+
+func TestParityWaveMoneyRequestOverrides(t *testing.T) {
+	vector := testutil.Fixture(t, "parity/vectors.json")["wave_money_request_overrides"].(map[string]any)
+	config := vector["config"].(map[string]any)
+	ttl, err := strconv.Atoi(config["time_to_live_in_seconds"].(json.Number).String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	doer := &formDoer{}
+	gateway, err := wavemoney.New(wavemoney.Config{
+		MerchantID: config["merchant_id"].(string), SecretKey: config["secret_key"].(string),
+		MerchantName: config["merchant_name"].(string), TimeToLiveSeconds: ttl,
+	}, doer)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A null merchant_name means "not set", the empty string in Go; a null time_to_live_in_seconds
+	// is a nil TimeToLiveSeconds, so an explicit 0 is still rejected like in the other SDKs.
+	build := func(item map[string]any) *wavemoney.PaymentData {
+		data := vector["data"].(map[string]any)
+		payment := &wavemoney.PaymentData{
+			OrderID: data["order_id"].(string), MerchantReferenceID: data["merchant_reference_id"].(string),
+			CallbackURL: data["callback_url"].(string), ReturnURL: data["return_url"].(string), Description: data["description"].(string),
+		}
+		for _, entry := range data["items"].([]any) {
+			pair := entry.([]any)
+			payment.Items = append(payment.Items, wavemoney.Item{Name: pair[0].(string), Amount: myanmarpayments.MustParseAmount(pair[1].(json.Number).String())})
+		}
+		if name, ok := item["merchant_name"].(string); ok {
+			payment.MerchantName = name
+		}
+		if seconds, ok := item["time_to_live_in_seconds"].(json.Number); ok {
+			value, err := strconv.Atoi(seconds.String())
+			if err != nil {
+				t.Fatal(err)
+			}
+			payment.TimeToLiveSeconds = &value
+		}
+		return payment
+	}
+
+	for _, item := range vector["cases"].([]any) {
+		vector := item.(map[string]any)
+		if _, err := gateway.Initiate(context.Background(), build(vector)); err != nil {
+			t.Fatalf("%v: %v", vector, err)
+		}
+		for field, want := range vector["expected"].(map[string]any) {
+			if got := doer.form.Get(field); got != want {
+				t.Errorf("%v: %s = %q, want %q", vector, field, got, want)
+			}
+		}
+	}
+
+	fields := map[string]string{"merchant_name": "merchantName", "time_to_live_in_seconds": "timeToLiveSeconds"}
+	for _, item := range vector["invalid"].([]any) {
+		vector := item.(map[string]any)
+		_, err := gateway.Initiate(context.Background(), build(vector))
+		var invalid *myanmarpayments.InvalidPaymentDataError
+		field := fields[vector["setting"].(string)]
+		if !errors.As(err, &invalid) || invalid.Errors[field] == "" {
+			t.Errorf("%v: got %v, want an error on %s", vector, err, field)
 		}
 	}
 }

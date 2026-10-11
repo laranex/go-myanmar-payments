@@ -36,6 +36,8 @@ func paymentData() *PaymentData {
 	}
 }
 
+func seconds(value int) *int { return &value }
+
 func hmacHex(message, secret string) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(message))
@@ -309,5 +311,68 @@ func TestNestedHashedFieldFailsVerification(t *testing.T) {
 	var sigErr *myanmarpayments.SignatureVerificationError
 	if !errors.As(err, &sigErr) {
 		t.Fatalf("expected SignatureVerificationError, got %v", err)
+	}
+}
+
+func TestPaymentOverridesReplaceTheConfiguredNameAndTimeToLive(t *testing.T) {
+	cases := map[string]struct {
+		merchantName string
+		ttl          *int
+		wantName     string
+		wantTTL      string
+	}{
+		"defaults":          {"", nil, "Shop", "300"},
+		"both overridden":   {"Tikkat", seconds(600), "Tikkat", "600"},
+		"name only":         {"Tikkat", nil, "Tikkat", "300"},
+		"time to live only": {"", seconds(60), "Shop", "60"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			server := testutil.NewServer(t, testutil.Reply{Body: map[string]any{"message": "success", "transaction_id": "T1"}})
+			gateway := newGateway(t, server)
+			data := paymentData()
+			data.MerchantName, data.TimeToLiveSeconds = tc.merchantName, tc.ttl
+
+			if _, err := gateway.Initiate(context.Background(), data); err != nil {
+				t.Fatal(err)
+			}
+
+			form, _ := url.ParseQuery(string(server.Last(t).Body))
+			if form.Get("merchant_name") != tc.wantName || form.Get("time_to_live_in_seconds") != tc.wantTTL {
+				t.Fatalf("unexpected form %v", form)
+			}
+			if form.Get("hash") != hmacHex(tc.wantTTL+"testmerchantID1001000https://shop.test/wave/callbackref-001", "test-secret") {
+				t.Fatal("request hash does not use the time to live in effect")
+			}
+			if gateway.Config().MerchantName != "Shop" || gateway.Config().TimeToLiveSeconds != 300 {
+				t.Fatalf("the override changed the configuration %+v", gateway.Config())
+			}
+		})
+	}
+}
+
+func TestInvalidPaymentOverridesAreRejected(t *testing.T) {
+	cases := map[string]struct {
+		mutate  func(*PaymentData)
+		field   string
+		message string
+	}{
+		"blank merchant name":   {func(d *PaymentData) { d.MerchantName = " \t " }, "merchantName", "The merchantName field is required."},
+		"zero time to live":     {func(d *PaymentData) { d.TimeToLiveSeconds = seconds(0) }, "timeToLiveSeconds", "The timeToLiveSeconds field must be greater than 0."},
+		"negative time to live": {func(d *PaymentData) { d.TimeToLiveSeconds = seconds(-5) }, "timeToLiveSeconds", "The timeToLiveSeconds field must be greater than 0."},
+		"negative with bad items": {func(d *PaymentData) {
+			d.TimeToLiveSeconds = seconds(-1)
+			d.Items = []Item{{"A", myanmarpayments.Kyat(-1)}}
+		}, "timeToLiveSeconds", "The timeToLiveSeconds field must be greater than 0."},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			data := paymentData()
+			tc.mutate(data)
+			var invalid *myanmarpayments.InvalidPaymentDataError
+			if _, err := newGateway(t, nil).Initiate(context.Background(), data); !errors.As(err, &invalid) || invalid.Errors[tc.field] != tc.message {
+				t.Fatalf("expected %q on %s, got %v", tc.message, tc.field, err)
+			}
+		})
 	}
 }
