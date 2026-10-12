@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -39,6 +40,12 @@ var payloadFields = []string{
 	"approvalCode", "tranRef", "userRef1", "userRef2", "userRef3", "userRef4", "userRef5",
 	"description", "dateTime",
 }
+
+var (
+	statusCodePattern = regexp.MustCompile(`^[0-9]{2}$`)
+	amountPattern     = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?$`)
+	dateTimePattern   = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$`)
+)
 
 // Gateway talks to the AYA Payment Gateway.
 type Gateway struct {
@@ -222,7 +229,11 @@ func (g *Gateway) verifiedPayload(input map[string]any, context string) (map[str
 		return nil, fail
 	}
 
+	// The checksum joins the values with ":" and skips absent fields, so a value holding ":"
+	// could be re-split into other fields (e.g. the "00" seconds of dateTime read as statusCode).
+	// Only dateTime may hold ":", and only in AYA's fixed "YYYY-MM-DD hh:mm:ss" format.
 	var parts []string
+	signed := map[string]string{}
 	for _, field := range payloadFields {
 		key := field
 		if field == "currencyCode" {
@@ -239,10 +250,25 @@ func (g *Gateway) verifiedPayload(input map[string]any, context string) (map[str
 			return nil, fail
 		}
 		str, _ := values.String(value)
+		if field == "dateTime" {
+			if str != "" && !dateTimePattern.MatchString(str) {
+				return nil, fail
+			}
+		} else if strings.Contains(str, ":") {
+			return nil, fail
+		}
+		signed[field] = str
 		parts = append(parts, str)
 	}
 
 	if !hmac.Equal([]byte(g.checksum(parts...)), []byte(strings.ToLower(checkSum))) {
+		return nil, fail
+	}
+
+	// A result is only trusted when it names the order, the transaction, an exact MMK amount
+	// and a two-digit status.
+	if signed["merchOrderId"] == "" || signed["tranId"] == "" || signed["currencyCode"] != currencyMMK ||
+		!amountPattern.MatchString(signed["amount"]) || !statusCodePattern.MatchString(signed["statusCode"]) {
 		return nil, fail
 	}
 	return payload, nil

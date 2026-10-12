@@ -239,9 +239,9 @@ func TestValidationFollowsAYARules(t *testing.T) {
 
 func TestVerifyRedirectAcceptsAPlusThatArrivedAsASpace(t *testing.T) {
 	for i := 0; i < 256; i++ {
-		description := fmt.Sprintf("Order ~%d>?", i)
-		payload := map[string]any{"merchOrderId": "ORD123456", "amount": "1000", "statusCode": "00", "description": description}
-		body := signed(t, payload, "ORD123456:1000:00:"+description)
+		description := fmt.Sprintf("Order ~%d%s>?", i, strings.Repeat("~", i%3))
+		payload := map[string]any{"merchOrderId": "ORD123456", "tranId": "T1", "amount": "1000", "currenyCode": "104", "statusCode": "00", "description": description}
+		body := signed(t, payload, "ORD123456:T1:1000:104:00:"+description)
 		encoded := body["payload"].(string)
 		if !strings.Contains(encoded, "+") {
 			continue
@@ -254,7 +254,7 @@ func TestVerifyRedirectAcceptsAPlusThatArrivedAsASpace(t *testing.T) {
 			t.Fatalf("got %+v %v", callback, err)
 		}
 
-		query.Set("checkSum", hmacHex("ORD123456:1:00:"+description, "test-secret"))
+		query.Set("checkSum", hmacHex("ORD123456:T1:1:104:00:"+description, "test-secret"))
 		if _, err := newGateway(t, nil).VerifyRedirect(myanmarpayments.NewCallbackRequest(nil, nil, query)); err == nil {
 			t.Fatal("expected the checksum to still be verified")
 		}
@@ -293,6 +293,114 @@ func TestPayloadRulesFromTheSharedVectors(t *testing.T) {
 			_, err := newGateway(t, nil).HandleCallback(myanmarpayments.NewCallbackRequest([]byte(vector["body"].(string)), nil, nil))
 			if valid := vector["expected"].(map[string]any)["valid"] == true; valid != (err == nil) {
 				t.Fatalf("valid = %v, got error %v", valid, err)
+			}
+		})
+	}
+}
+
+func TestAReSplitDateTimeCannotForgeASuccess(t *testing.T) {
+	// A genuine failed payment (statusCode 02) whose dateTime ends in ":00".
+	genuine := map[string]any{"merchOrderId": "ORD123456", "tranId": "TRN0001", "amount": "1000", "currenyCode": "104", "statusCode": "02", "dateTime": "2026-10-07 10:00:00"}
+	checksum := "ORD123456:TRN0001:1000:104:02:2026-10-07 10:00:00"
+	body := signed(t, genuine, checksum)
+	if callback, err := newGateway(t, nil).HandleCallback(callbackRequest(t, body)); err != nil || callback.Status != myanmarpayments.StatusFailed {
+		t.Fatalf("the genuine payload must verify as failed, got %+v %v", callback, err)
+	}
+
+	// The same signed string re-split so the seconds of dateTime read as statusCode 00. Each
+	// split joins to the genuine checksum string.
+	forged := []map[string]any{
+		{"merchOrderId": "ORD123456", "tranId": "TRN0001", "amount": "1000", "currenyCode": "104:02:2026-10-07 10:00", "statusCode": "00"},
+		{"merchOrderId": "ORD123456:TRN0001:1000:104:02:2026-10-07 10:00", "statusCode": "00"},
+	}
+	for _, payload := range forged {
+		parts := []string{}
+		for _, key := range []string{"merchOrderId", "tranId", "amount", "currenyCode", "statusCode"} {
+			if value, ok := payload[key]; ok {
+				parts = append(parts, value.(string))
+			}
+		}
+		if strings.Join(parts, ":") != checksum {
+			t.Fatalf("the forged split %v does not join to the signed string", payload)
+		}
+	}
+	for _, payload := range forged {
+		raw, _ := json.Marshal(payload)
+		request := map[string]any{"payload": base64.StdEncoding.EncodeToString(raw), "checkSum": body["checkSum"]}
+		var sigErr *myanmarpayments.SignatureVerificationError
+		if _, err := newGateway(t, nil).HandleCallback(callbackRequest(t, request)); !errors.As(err, &sigErr) {
+			t.Fatalf("forged payload %v verified: %v", payload, err)
+		}
+	}
+}
+
+func TestUntrustworthySignedPayloadsAreRejected(t *testing.T) {
+	base := map[string]any{"merchOrderId": "ORD123456", "tranId": "TRN0001", "amount": "1000", "currenyCode": "104", "statusCode": "00", "description": "Order", "dateTime": "2026-10-07 10:00:00"}
+	order := []string{"merchOrderId", "tranId", "amount", "currenyCode", "statusCode", "description", "dateTime"}
+	cases := map[string]func(map[string]any){
+		"missing merchOrderId":    func(p map[string]any) { delete(p, "merchOrderId") },
+		"empty tranId":            func(p map[string]any) { p["tranId"] = "" },
+		"missing amount":          func(p map[string]any) { delete(p, "amount") },
+		"missing currency code":   func(p map[string]any) { delete(p, "currenyCode") },
+		"null statusCode":         func(p map[string]any) { p["statusCode"] = nil },
+		"one-digit statusCode":    func(p map[string]any) { p["statusCode"] = "0" },
+		"another currency":        func(p map[string]any) { p["currenyCode"] = "840" },
+		"negative amount":         func(p map[string]any) { p["amount"] = "-1000" },
+		"amount with a comma":     func(p map[string]any) { p["amount"] = "1,000" },
+		"colon in description":    func(p map[string]any) { p["description"] = "a:b" },
+		"colon in tranId":         func(p map[string]any) { p["tranId"] = "T:1" },
+		"malformed dateTime":      func(p map[string]any) { p["dateTime"] = "2026-10-07 10:00" },
+		"dateTime with extra ':'": func(p map[string]any) { p["dateTime"] = "2026-10-07 10:00:00:00" },
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			payload := maps.Clone(base)
+			mutate(payload)
+			parts := []string{}
+			for _, key := range order {
+				if value, ok := payload[key]; ok {
+					text, _ := value.(string)
+					parts = append(parts, text)
+				}
+			}
+			var sigErr *myanmarpayments.SignatureVerificationError
+			_, err := newGateway(t, nil).HandleCallback(callbackRequest(t, signed(t, payload, strings.Join(parts, ":"))))
+			if !errors.As(err, &sigErr) {
+				t.Fatalf("expected SignatureVerificationError, got %v", err)
+			}
+		})
+	}
+
+	// The same payload, untouched, verifies (with the gateway's other currencyCode spelling too).
+	payload := maps.Clone(base)
+	payload["currencyCode"] = payload["currenyCode"]
+	delete(payload, "currenyCode")
+	if _, err := newGateway(t, nil).HandleCallback(callbackRequest(t, signed(t, payload, "ORD123456:TRN0001:1000:104:00:Order:2026-10-07 10:00:00"))); err != nil {
+		t.Fatal(err)
+	}
+	payload["amount"] = "1000.50"
+	if _, err := newGateway(t, nil).HandleCallback(callbackRequest(t, signed(t, payload, "ORD123456:TRN0001:1000.50:104:00:Order:2026-10-07 10:00:00"))); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPaymentDataRejectsColonsInSignedValues(t *testing.T) {
+	valid := PaymentData{OrderID: "ORD123456", Amount: myanmarpayments.Kyat(1000), Channel: "aya_pay", Method: MethodQR, Description: "Order", UserRefs: []string{"a", "b"}}
+	if err := valid.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string]func(*PaymentData){
+		"orderId":     func(d *PaymentData) { d.OrderID = "ORD:123456" },
+		"description": func(d *PaymentData) { d.Description = "Order: 1" },
+		"userRefs.1":  func(d *PaymentData) { d.UserRefs = []string{"a", "b:c"} },
+	}
+	for field, mutate := range cases {
+		t.Run(field, func(t *testing.T) {
+			data := valid
+			mutate(&data)
+			var invalid *myanmarpayments.InvalidPaymentDataError
+			if _, err := newGateway(t, nil).Initiate(data); !errors.As(err, &invalid) || invalid.Errors[field] != `The `+field+` field must not contain ":".` {
+				t.Fatalf("expected an error on %s, got %v", field, err)
 			}
 		})
 	}

@@ -1,6 +1,9 @@
 package ayapay
 
 import (
+	"fmt"
+	"strings"
+
 	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
 	"github.com/laranex/go-myanmar-payments/v4/internal/validate"
 )
@@ -39,9 +42,10 @@ type PaymentData struct {
 	UserRefs []string
 }
 
-// Validate checks the order against AYA's documented rules.
+// Validate checks the order against AYA's documented rules. OrderID, Description and UserRefs
+// must not contain ":", which separates the values AYA signs.
 func (d PaymentData) Validate() error {
-	return validate.New().
+	v := validate.New().
 		Required("orderId", d.OrderID).
 		Length("orderId", d.OrderID, 6, 40).
 		Amount("amount", d.Amount, validate.AmountRule{Gateway: "AYA Payment Gateway"}).
@@ -49,7 +53,17 @@ func (d PaymentData) Validate() error {
 		When(!d.Method.valid(), "method", "The method field must be one of WEB, QR or NOTI.").
 		URL("returnUrl", d.ReturnURL).
 		When(len(d.UserRefs) > 5, "userRefs", "The userRefs field must not have more than 5 items.").
-		Err()
+		When(strings.Contains(d.OrderID, ":"), "orderId", noColon("orderId")).
+		When(strings.Contains(d.Description, ":"), "description", noColon("description"))
+	for i, ref := range d.UserRefs {
+		field := fmt.Sprintf("userRefs.%d", i)
+		v.When(strings.Contains(ref, ":"), field, noColon(field))
+	}
+	return v.Err()
+}
+
+func noColon(field string) string {
+	return fmt.Sprintf(`The %s field must not contain ":".`, field)
 }
 
 // Service is a payment channel enabled for your merchant account.
