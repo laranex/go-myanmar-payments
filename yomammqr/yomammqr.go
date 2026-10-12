@@ -150,7 +150,9 @@ func (g *Gateway) Status(ctx context.Context, reference string) (*myanmarpayment
 // keyed with the order number followed by the webhook hash key.
 //
 // Only orderNumber and status are signed; Yoma's callback carries no amount, so the result's
-// Amount is empty. Before fulfilling, confirm the payment and its amount with Status.
+// Amount is empty. Match orderNumber to your stored order (its QR was generated for the stored
+// amount) and, to confirm, call Status with that order's QR reference (refLabel). The status
+// result has no amount either, so trust your stored amount.
 func (g *Gateway) HandleCallback(request *myanmarpayments.CallbackRequest) (*myanmarpayments.PaymentCallback, error) {
 	payload := request.ParsedBody()
 

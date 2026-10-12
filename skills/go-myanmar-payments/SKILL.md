@@ -89,7 +89,7 @@ return callback.Acknowledgement.Write(w)
 
 - Give the package the raw body: `NewCallbackRequestFromHTTP` reads it once and puts it back, so don't call `r.ParseForm()` first. Bodies over `myanmarpayments.MaxCallbackBodyBytes` (64 KiB) return an error wrapping `ErrCallbackBodyTooLarge`.
 - Check AYA's browser return with `aya.VerifyRedirect(request)`.
-- Yoma MMQR callbacks sign only the order number and status and carry no amount: confirm the payment and its amount with `yoma.Status(ctx, reference)` before fulfilling.
+- Yoma MMQR callbacks sign only the order number and status and carry no amount: match the order number to your stored order (its QR was generated for the stored amount) and, to confirm, call `yoma.Status(ctx, reference)` with that order's QR reference (`refLabel`). The status result has no amount either, so trust your stored amount.
 - For production, store the verified callback, acknowledge immediately, then process it once in the background.
 
 ### Check status and handle errors
