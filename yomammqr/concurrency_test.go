@@ -118,3 +118,65 @@ func TestACanceledCallerDoesNotFailTheSharedTokenRequest(t *testing.T) {
 		t.Fatalf("token requests = %d, want 1", got)
 	}
 }
+
+func TestAStuckTokenRequestIsBoundedByTheTimeout(t *testing.T) {
+	var tokenRequests int32
+	release := make(chan struct{})
+	gateway := tokenServer(t, release, &tokenRequests)
+	t.Cleanup(func() { close(release) })
+	gateway.tokenTimeout = 100 * time.Millisecond
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := gateway.Status(context.Background(), "1")
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		var apiErr *myanmarpayments.APIError
+		if !errors.As(err, &apiErr) || !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("got %v, want an APIError wrapping context.DeadlineExceeded", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the token request was not bounded")
+	}
+
+	gateway.mu.Lock()
+	inflight := gateway.inflight
+	gateway.mu.Unlock()
+	if inflight != nil {
+		t.Fatal("a timed-out token request must not block later callers")
+	}
+}
+
+func TestATokenFetchedBeforeForgetTokenIsNotCached(t *testing.T) {
+	var tokenRequests int32
+	release := make(chan struct{})
+	gateway := tokenServer(t, release, &tokenRequests)
+
+	first := make(chan error, 1)
+	go func() {
+		_, err := gateway.Status(context.Background(), "1")
+		first <- err
+	}()
+	for deadline := time.Now().Add(5 * time.Second); atomic.LoadInt32(&tokenRequests) == 0 && time.Now().Before(deadline); {
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	gateway.ForgetToken()
+	close(release)
+	if err := <-first; err != nil {
+		t.Fatal(err)
+	}
+	if token, ok := gateway.cache.Get(gateway.tokenCacheKey()); ok {
+		t.Fatalf("a token fetched before ForgetToken was cached: %q", token)
+	}
+
+	// The next call fetches and caches a fresh token.
+	if _, err := gateway.Status(context.Background(), "1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := gateway.cache.Get(gateway.tokenCacheKey()); !ok || atomic.LoadInt32(&tokenRequests) != 2 {
+		t.Fatalf("expected a fresh cached token, token requests = %d", atomic.LoadInt32(&tokenRequests))
+	}
+}

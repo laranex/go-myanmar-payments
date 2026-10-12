@@ -40,8 +40,12 @@ type Gateway struct {
 	cache     myanmarpayments.TokenCache
 	now       func() time.Time
 
-	mu       sync.Mutex
-	inflight *tokenCall
+	// tokenTimeout bounds a shared token request, which runs without any one caller's context.
+	tokenTimeout time.Duration
+
+	mu         sync.Mutex
+	inflight   *tokenCall
+	generation uint64
 }
 
 // tokenCall is a token request that concurrent callers share.
@@ -61,7 +65,13 @@ func New(config Config, client myanmarpayments.HTTPDoer, cache myanmarpayments.T
 	if cache == nil {
 		cache = myanmarpayments.NewMemoryTokenCache()
 	}
-	return &Gateway{config: config, transport: transport.New(client, config.TimeoutSeconds), cache: cache, now: time.Now}, nil
+	return &Gateway{
+		config:       config,
+		transport:    transport.New(client, config.TimeoutSeconds),
+		cache:        cache,
+		now:          time.Now,
+		tokenTimeout: time.Duration(config.TimeoutSeconds) * time.Second,
+	}, nil
 }
 
 // Config returns the configuration in use.
@@ -164,8 +174,15 @@ func (g *Gateway) HandleCallback(request *myanmarpayments.CallbackRequest) (*mya
 	}, nil
 }
 
-// ForgetToken drops the cached access token, e.g. after rotating the client secret.
-func (g *Gateway) ForgetToken() { g.cache.Delete(g.tokenCacheKey()) }
+// ForgetToken drops the cached access token, e.g. after rotating the client secret. A token
+// request already in flight is not cached when it completes, and later calls request a new one.
+func (g *Gateway) ForgetToken() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.generation++
+	g.inflight = nil
+	g.cache.Delete(g.tokenCacheKey())
+}
 
 func (g *Gateway) call(ctx context.Context, path string, data map[string]any, allowErrors []string) (map[string]any, error) {
 	endpoint := fmt.Sprintf("%s/payment-gateway/%s/api/%s", g.config.ResolvedBaseURL(), g.config.APIVersion, path)
@@ -207,18 +224,29 @@ func (g *Gateway) token(ctx context.Context) (string, error) {
 	}
 
 	// Concurrent calls share one token request. It runs without any one caller's cancellation,
-	// so a caller that gives up does not fail the others (the HTTP client's timeout still
-	// applies); each caller still stops waiting when its own context ends.
+	// so a caller that gives up does not fail the others, but it is bounded by the configured
+	// timeout so a stuck request cannot block later callers; each caller still stops waiting
+	// when its own context ends. A token fetched before ForgetToken (e.g. after a 401) is not
+	// cached.
 	g.mu.Lock()
 	call := g.inflight
 	if call == nil {
 		call = &tokenCall{done: make(chan struct{})}
 		g.inflight = call
+		generation := g.generation
 		go func() {
-			call.token, call.err = g.fetchToken(context.WithoutCancel(ctx))
+			fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), g.tokenTimeout)
+			defer cancel()
+			token, ttl, err := g.fetchToken(fetchCtx)
 			g.mu.Lock()
-			g.inflight = nil
+			if err == nil && generation == g.generation {
+				g.cache.Set(g.tokenCacheKey(), token, ttl)
+			}
+			if g.inflight == call {
+				g.inflight = nil
+			}
 			g.mu.Unlock()
+			call.token, call.err = token, err
 			close(call.done)
 		}()
 	}
@@ -235,17 +263,17 @@ func (g *Gateway) token(ctx context.Context) (string, error) {
 	}
 }
 
-func (g *Gateway) fetchToken(ctx context.Context) (string, error) {
+func (g *Gateway) fetchToken(ctx context.Context) (string, time.Duration, error) {
 	credentials := base64.StdEncoding.EncodeToString([]byte(g.config.ClientID + ":" + g.config.ClientSecret))
 	response, err := g.transport.PostForm(ctx, g.config.ResolvedBaseURL()+"/token", url.Values{"grant_type": {"client_credentials"}}, map[string]string{"Authorization": "Basic " + credentials})
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 
 	body := response.JSON()
 	token := values.Get(body, "access_token")
 	if !response.Successful() || token == "" {
-		return "", apiError("token", response.Status, body, values.Get(body, "error"))
+		return "", 0, apiError("token", response.Status, body, values.Get(body, "error"))
 	}
 
 	expiresIn := leadingInt(values.Get(body, "expires_in"))
@@ -256,9 +284,8 @@ func (g *Gateway) fetchToken(ctx context.Context) (string, error) {
 	if ttl < time.Minute {
 		ttl = time.Minute
 	}
-	g.cache.Set(g.tokenCacheKey(), token, ttl)
 
-	return token, nil
+	return token, ttl, nil
 }
 
 func (g *Gateway) tokenCacheKey() string {
