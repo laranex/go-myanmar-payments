@@ -21,6 +21,16 @@ func TestFormPaymentHTMLEscapesEverything(t *testing.T) {
 	}
 }
 
+func TestFormPaymentHTMLWithNonceAddsAnEscapedNonce(t *testing.T) {
+	payment := FormPayment{Action: "https://pay.test/", Fields: []FormField{{Name: "a", Value: "b"}}}
+	if html := payment.HTMLWithNonce(`n"1<`); !strings.Contains(html, `<script nonce="n&#34;1&lt;">document`) {
+		t.Fatalf("unexpected html %s", html)
+	}
+	if payment.HTMLWithNonce("") != payment.HTML() || strings.Contains(payment.HTML(), "nonce") {
+		t.Fatal("an empty nonce must render the plain page")
+	}
+}
+
 func TestCallbackRequestParsesJSONAndFormBodies(t *testing.T) {
 	jsonRequest := NewCallbackRequest([]byte(`{"amount": 1000, "nested": {"a": "b"}}`), nil, url.Values{"q": {"1"}})
 	if jsonRequest.ParsedBody()["amount"] != json.Number("1000") || jsonRequest.Input()["q"] != "1" {

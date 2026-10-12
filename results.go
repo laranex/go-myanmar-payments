@@ -73,7 +73,11 @@ func (p FormPayment) Values() map[string]string {
 }
 
 // HTML returns a complete page that posts the form as soon as it loads. All values are escaped.
-func (p FormPayment) HTML() string {
+func (p FormPayment) HTML() string { return p.HTMLWithNonce("") }
+
+// HTMLWithNonce returns the page HTML renders, with nonce (escaped) on its inline script so a
+// Content-Security-Policy with script-src 'nonce-...' allows it. An empty nonce adds nothing.
+func (p FormPayment) HTMLWithNonce(nonce string) string {
 	escape := htmlEscaper.Replace
 	enctype := p.Enctype
 	if enctype == "" {
@@ -87,7 +91,11 @@ func (p FormPayment) HTML() string {
 		b.WriteString(`<input type="hidden" name="` + escape(field.Name) + `" value="` + escape(field.Value) + `">`)
 	}
 	b.WriteString(`<noscript><button type="submit">Continue to payment</button></noscript></form>`)
-	b.WriteString(`<script>document.getElementById("payment-form").submit();</script></body></html>`)
+	b.WriteString(`<script`)
+	if nonce != "" {
+		b.WriteString(` nonce="` + escape(nonce) + `"`)
+	}
+	b.WriteString(`>document.getElementById("payment-form").submit();</script></body></html>`)
 
 	return b.String()
 }
