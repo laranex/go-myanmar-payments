@@ -148,6 +148,9 @@ func (g *Gateway) Status(ctx context.Context, reference string) (*myanmarpayment
 
 // HandleCallback verifies Yoma's payment callback: HMAC-SHA256 of "orderNumber=..&status=.."
 // keyed with the order number followed by the webhook hash key.
+//
+// Only orderNumber and status are signed; Yoma's callback carries no amount, so the result's
+// Amount is empty. Before fulfilling, confirm the payment and its amount with Status.
 func (g *Gateway) HandleCallback(request *myanmarpayments.CallbackRequest) (*myanmarpayments.PaymentCallback, error) {
 	payload := request.ParsedBody()
 
