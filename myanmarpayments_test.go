@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -45,6 +46,30 @@ func TestCallbackRequestFromHTTPKeepsTheBodyReadable(t *testing.T) {
 		t.Fatalf("unexpected request %+v", request)
 	}
 }
+
+func TestCallbackRequestFromHTTPCapsTheBody(t *testing.T) {
+	exact := httptest.NewRequest(http.MethodPost, "/cb", bytes.NewReader(bytes.Repeat([]byte("a"), MaxCallbackBodyBytes)))
+	if request, err := NewCallbackRequestFromHTTP(exact); err != nil || len(request.Body) != MaxCallbackBodyBytes {
+		t.Fatalf("a body of exactly the limit must be read, got %v", err)
+	}
+
+	large := httptest.NewRequest(http.MethodPost, "/cb", bytes.NewReader(bytes.Repeat([]byte("a"), MaxCallbackBodyBytes+1)))
+	if _, err := NewCallbackRequestFromHTTP(large); !errors.Is(err, ErrCallbackBodyTooLarge) {
+		t.Fatalf("expected ErrCallbackBodyTooLarge, got %v", err)
+	}
+}
+
+func TestCallbackRequestFromHTTPReportsReadErrors(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPost, "/cb", nil)
+	r.Body = io.NopCloser(failingReader{})
+	if _, err := NewCallbackRequestFromHTTP(r); err == nil || errors.Is(err, ErrCallbackBodyTooLarge) {
+		t.Fatalf("expected a read error, got %v", err)
+	}
+}
+
+type failingReader struct{}
+
+func (failingReader) Read([]byte) (int, error) { return 0, errors.New("boom") }
 
 func TestAcknowledgementIsWritten(t *testing.T) {
 	recorder := httptest.NewRecorder()

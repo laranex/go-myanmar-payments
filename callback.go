@@ -3,6 +3,7 @@ package myanmarpayments
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -36,15 +37,28 @@ func NewCallbackRequest(body []byte, header http.Header, query url.Values) *Call
 	return &CallbackRequest{Body: body, Header: header, Query: query}
 }
 
+// MaxCallbackBodyBytes is the largest callback body NewCallbackRequestFromHTTP reads (64 KiB).
+// Gateway callbacks are a few kilobytes at most.
+const MaxCallbackBodyBytes = 64 << 10
+
+// ErrCallbackBodyTooLarge is returned (wrapped) by NewCallbackRequestFromHTTP when the body is
+// larger than MaxCallbackBodyBytes.
+var ErrCallbackBodyTooLarge = errors.New("myanmarpayments: The callback body is too large")
+
 // NewCallbackRequestFromHTTP reads the body of r once and keeps its headers and query.
-// The body of r is replaced so it can still be read afterwards.
+// The body of r is replaced so it can still be read afterwards. A body larger than
+// MaxCallbackBodyBytes is not read past the limit and returns an error wrapping
+// ErrCallbackBodyTooLarge.
 func NewCallbackRequestFromHTTP(r *http.Request) (*CallbackRequest, error) {
 	var body []byte
 	if r.Body != nil {
 		var err error
-		body, err = io.ReadAll(r.Body)
+		body, err = io.ReadAll(io.LimitReader(r.Body, MaxCallbackBodyBytes+1))
 		if err != nil {
 			return nil, fmt.Errorf("myanmarpayments: Could not read the callback body: %w", err)
+		}
+		if len(body) > MaxCallbackBodyBytes {
+			return nil, fmt.Errorf("%w (more than %d bytes)", ErrCallbackBodyTooLarge, MaxCallbackBodyBytes)
 		}
 		r.Body = io.NopCloser(bytes.NewReader(body))
 	}
