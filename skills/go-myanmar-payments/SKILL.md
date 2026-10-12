@@ -57,12 +57,12 @@ if err != nil {
 http.Redirect(w, r, payment.URL, http.StatusFound)
 ```
 
-- `*RedirectPayment` (`URL`) from `kbz.PWA(ctx, data)` and `wave.Initiate(ctx, &data)`. Wave fills `data.MerchantReferenceID` when empty; store it. Wave's optional `MerchantName` (`string`, empty uses the config) and `TimeToLiveSeconds` (`*int`, nil uses the config, required when the config has none, 0 is rejected) override the configured values for that payment only.
-- `*FormPayment` from `aya.Initiate(data)` and `cs.Initiate(data)` (no network call): write `payment.HTML()` for an auto-submitting page, or render `Action`, `Fields` and `Enctype` yourself.
+- `*RedirectPayment` (`URL`) from `kbz.PWA(ctx, data)` and `wave.Initiate(ctx, &data)`. Wave fills `data.MerchantReferenceID` when empty; store it. Wave's `OrderID` and `MerchantReferenceID` may only hold letters, numbers, `_` and `-`. Wave's optional `MerchantName` (`string`, empty uses the config) and `TimeToLiveSeconds` (`*int`, nil uses the config, required when the config has none, 0 is rejected) override the configured values for that payment only.
+- `*FormPayment` from `aya.Initiate(data)` and `cs.Initiate(data)` (no network call): write `payment.HTML()` for an auto-submitting page (`payment.HTMLWithNonce(nonce)` adds your Content-Security-Policy nonce to its inline script; serve it with `Referrer-Policy: strict-origin`), or render `Action`, `Fields` and `Enctype` yourself.
 - `*QrPayment` from `kbz.QR(ctx, data)` (encode `QRString`) and `yoma.Initiate(ctx, data)` (`QRImageDataURI("image/png")`, `ExpiresAt`, `Reference`). A Yoma QR lives `yomammqr.QRLifetime` (120 seconds); renew it with `yoma.RenewQR(ctx, orderID)`.
 - `*AppPayment` from `kbz.App(ctx, data)`: JSON-encode it (`orderId`, `orderInfo`, `sign`, `signType`) for your mobile app.
 
-AYA needs a channel: `aya.Services(ctx)` lists `ayapay.Service` entries (`Key`, `Supports(method)`), then `aya.Initiate(ayapay.PaymentData{OrderID: "ORDER123", Amount: myanmarpayments.Kyat(1000), Channel: "kbz_pay", Method: ayapay.MethodQR})`.
+AYA needs a channel: `aya.Services(ctx)` lists `ayapay.Service` entries (`Key`, `Supports(method)`), then `aya.Initiate(ayapay.PaymentData{OrderID: "ORDER123", Amount: myanmarpayments.Kyat(1000), Channel: "kbz_pay", Method: ayapay.MethodQR})`. AYA's `OrderID`, `Description` and `UserRefs` must not contain `:`.
 
 ### Handle the callback
 
@@ -87,8 +87,9 @@ if callback.IsSuccessful() {
 return callback.Acknowledgement.Write(w)
 ```
 
-- Give the package the raw body: `NewCallbackRequestFromHTTP` reads it once and puts it back, so don't call `r.ParseForm()` first.
+- Give the package the raw body: `NewCallbackRequestFromHTTP` reads it once and puts it back, so don't call `r.ParseForm()` first. Bodies over `myanmarpayments.MaxCallbackBodyBytes` (64 KiB) return an error wrapping `ErrCallbackBodyTooLarge`.
 - Check AYA's browser return with `aya.VerifyRedirect(request)`.
+- Yoma MMQR callbacks sign only the order number and status and carry no amount: confirm the payment and its amount with `yoma.Status(ctx, reference)` before fulfilling.
 - For production, store the verified callback, acknowledge immediately, then process it once in the background.
 
 ### Check status and handle errors
