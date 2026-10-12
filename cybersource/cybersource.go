@@ -89,11 +89,20 @@ func (g *Gateway) Initiate(data PaymentData) (*myanmarpayments.FormPayment, erro
 // keeps only the signed fields plus signature.
 // Without this rule the signed request form, which the customer's browser sees, could be
 // replayed with unsigned result fields added.
+//
+// The signed string joins name=value pairs with ",", split by the payload's own
+// signed_field_names, so that list is checked too: it must list signed_field_names itself, with
+// no empty or repeated names and no name holding "=" or ","; and decision must be ACCEPT,
+// DECLINE, REVIEW, ERROR or CANCEL. Otherwise a customer-typed signed value such as
+// "x,decision=ACCEPT" could be re-partitioned into a different result.
 func (g *Gateway) HandleCallback(request *myanmarpayments.CallbackRequest) (*myanmarpayments.PaymentCallback, error) {
 	payload := request.Input()
 	expected, ok := g.sign(payload)
-	signed := signedNames(payload)
-	if !ok || !hmac.Equal([]byte(expected), []byte(values.Get(payload, "signature"))) || !signed["decision"] || !signed["req_reference_number"] {
+	signed, wellFormed := signedNames(payload)
+	decision := strings.ToUpper(values.Trimmed(payload, "decision"))
+	_, knownDecision := statuses[decision]
+	if !ok || !wellFormed || !hmac.Equal([]byte(expected), []byte(values.Get(payload, "signature"))) ||
+		!signed["decision"] || !signed["req_reference_number"] || !signed["signed_field_names"] || !knownDecision {
 		return nil, &myanmarpayments.SignatureVerificationError{Message: "CyberSource callback signature verification failed.", Raw: payload}
 	}
 
@@ -104,7 +113,6 @@ func (g *Gateway) HandleCallback(request *myanmarpayments.CallbackRequest) (*mya
 		return values.Get(payload, name)
 	}
 
-	decision := strings.ToUpper(values.Trimmed(payload, "decision"))
 	amount := signedValue("auth_amount")
 	if amount == "" {
 		amount = signedValue("req_amount")
@@ -126,15 +134,17 @@ func (g *Gateway) HandleCallback(request *myanmarpayments.CallbackRequest) (*mya
 	}, nil
 }
 
-// signedNames returns the field names listed in signed_field_names.
-func signedNames(fields map[string]any) map[string]bool {
-	names := map[string]bool{}
+// signedNames returns the field names listed in signed_field_names; wellFormed is false when a
+// name is empty, repeated or holds "=".
+func signedNames(fields map[string]any) (names map[string]bool, wellFormed bool) {
+	names = map[string]bool{}
 	for _, name := range strings.Split(values.Get(fields, "signed_field_names"), ",") {
-		if name != "" {
-			names[name] = true
+		if name == "" || names[name] || strings.Contains(name, "=") {
+			return names, false
 		}
+		names[name] = true
 	}
-	return names
+	return names, true
 }
 
 // sign signs the fields listed in signed_field_names; ok is false when a listed field is missing.

@@ -232,3 +232,60 @@ func TestRawKeepsOnlySignedFields(t *testing.T) {
 		t.Fatalf("unexpected raw %v", result.Raw)
 	}
 }
+
+func signedForm(fields map[string]string) *myanmarpayments.CallbackRequest {
+	form := url.Values{}
+	for key, value := range fields {
+		form.Set(key, value)
+	}
+	return myanmarpayments.NewCallbackRequest([]byte(form.Encode()), nil, nil)
+}
+
+func TestARePartitionedSignedFieldListCannotForgeAnAccept(t *testing.T) {
+	// A genuine DECLINE whose customer-typed, signed req_bill_to_forename is "x,decision=ACCEPT".
+	genuine := map[string]string{
+		"transaction_id": "7000", "decision": "DECLINE", "req_bill_to_forename": "x,decision=ACCEPT", "req_reference_number": "ORDER-1",
+		"signed_field_names": "transaction_id,decision,signed_field_names,req_bill_to_forename,req_reference_number",
+	}
+	genuine["signature"] = signature(genuine)
+	if result, err := newGateway(t).HandleCallback(signedForm(genuine)); err != nil || result.Status != myanmarpayments.StatusFailed {
+		t.Fatalf("the genuine post must verify as declined, got %+v %v", result, err)
+	}
+
+	// The same signed string re-partitioned: transaction_id swallows everything up to the
+	// customer's text, so decision reads ACCEPT and signed_field_names is no longer listed.
+	forged := map[string]string{
+		"transaction_id":       "7000,decision=DECLINE,signed_field_names=transaction_id,decision,signed_field_names,req_bill_to_forename,req_reference_number,req_bill_to_forename=x",
+		"decision":             "ACCEPT",
+		"req_reference_number": "ORDER-1",
+		"signed_field_names":   "transaction_id,decision,req_reference_number",
+		"signature":            genuine["signature"],
+	}
+	if signature(forged) != genuine["signature"] {
+		t.Fatal("the forged partition must sign to the genuine signature")
+	}
+	var sigErr *myanmarpayments.SignatureVerificationError
+	if _, err := newGateway(t).HandleCallback(signedForm(forged)); !errors.As(err, &sigErr) {
+		t.Fatalf("expected SignatureVerificationError, got %v", err)
+	}
+}
+
+func TestMalformedSignedFieldListsAndDecisionsAreRejected(t *testing.T) {
+	cases := map[string]map[string]string{
+		"signed_field_names not listed": {"signed_field_names": "decision,req_reference_number,transaction_id,auth_amount"},
+		"repeated name":                 {"signed_field_names": "decision,decision,req_reference_number,signed_field_names"},
+		"empty name":                    {"signed_field_names": "decision,,req_reference_number,signed_field_names"},
+		"trailing comma":                {"signed_field_names": "decision,req_reference_number,signed_field_names,"},
+		"name holding =":                {"signed_field_names": "decision,req_reference_number,a=b,signed_field_names", "a=b": "c"},
+		"unknown decision":              {"decision": "APPROVED"},
+		"decision holding a comma":      {"decision": "ACCEPT,x"},
+	}
+	for name, overrides := range cases {
+		t.Run(name, func(t *testing.T) {
+			var sigErr *myanmarpayments.SignatureVerificationError
+			if _, err := newGateway(t).HandleCallback(callback(overrides)); !errors.As(err, &sigErr) {
+				t.Fatalf("expected SignatureVerificationError, got %v", err)
+			}
+		})
+	}
+}
