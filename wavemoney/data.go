@@ -21,7 +21,8 @@ type Item struct {
 
 // PaymentData is a Wave Money payment request. Wave only accepts whole kyat (MMK).
 type PaymentData struct {
-	// OrderID is your order id. One order can have several payment attempts.
+	// OrderID is your order id: letters, numbers, underscores and dashes. One order can have
+	// several payment attempts.
 	OrderID string
 	// CallbackURL is the URL that Wave posts the result to (backend_result_url).
 	CallbackURL string
@@ -33,7 +34,8 @@ type PaymentData struct {
 	Items []Item
 	// Amount is the total in whole kyat. Leave it unset to charge the sum of the items.
 	Amount myanmarpayments.Amount
-	// MerchantReferenceID is the unique id of this attempt. Wave rejects a reused one.
+	// MerchantReferenceID is the unique id of this attempt: letters, numbers, underscores and
+	// dashes. Wave rejects a reused one.
 	// Initiate fills it with a random id when empty; store it, because Wave's callback may
 	// omit OrderID but always carries this.
 	MerchantReferenceID string
@@ -76,6 +78,8 @@ func (d PaymentData) ResolvedAmount() myanmarpayments.Amount {
 func (d PaymentData) Validate() error {
 	v := validate.New().
 		Required("orderId", d.OrderID).
+		Pattern("orderId", d.OrderID, idPattern, idDescription).
+		Pattern("merchantReferenceId", d.MerchantReferenceID, idPattern, idDescription).
 		Required("callbackUrl", d.CallbackURL).
 		URL("callbackUrl", d.CallbackURL)
 	v.Required("returnUrl", d.ReturnURL).

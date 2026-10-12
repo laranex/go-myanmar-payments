@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -35,6 +36,15 @@ var callbackFields = []string{
 	"status", "timeToLiveSeconds", "merchantId", "orderId", "amount", "backendResultUrl",
 	"merchantReferenceId", "initiatorMsisdn", "transactionId", "paymentRequestId", "requestTime",
 }
+
+// Wave's hash concatenates the values with no separator, so a verified callback must also hold
+// values in their expected formats. Payments validate their ids against the same pattern.
+var (
+	idPattern     = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+	amountPattern = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?$`)
+)
+
+const idDescription = "letters, numbers, underscores and dashes"
 
 // Gateway talks to Wave Money.
 type Gateway struct {
@@ -147,7 +157,9 @@ func (g *Gateway) Initiate(ctx context.Context, data *PaymentData) (*myanmarpaym
 
 // HandleCallback verifies Wave's callback. Only PAYMENT_CONFIRMED means the customer paid.
 // OrderID falls back to merchantReferenceId when orderId is missing, null or empty, because Wave
-// marks orderId as optional.
+// marks orderId as optional. A callback whose amount is not a non-negative decimal, that has
+// neither id, or whose orderId or merchantReferenceId holds anything but letters, numbers, "_"
+// and "-", fails verification too.
 func (g *Gateway) HandleCallback(request *myanmarpayments.CallbackRequest) (*myanmarpayments.PaymentCallback, error) {
 	payload := request.ParsedBody()
 
@@ -164,14 +176,16 @@ func (g *Gateway) HandleCallback(request *myanmarpayments.CallbackRequest) (*mya
 		parts[i] = value
 	}
 	hashValue, _ := payload["hashValue"].(string)
-	if nested || !hmac.Equal([]byte(g.hash(parts)), []byte(strings.ToLower(hashValue))) {
+	orderID, referenceID := values.Get(payload, "orderId"), values.Get(payload, "merchantReferenceId")
+	if nested || !hmac.Equal([]byte(g.hash(parts)), []byte(strings.ToLower(hashValue))) ||
+		!amountPattern.MatchString(values.Get(payload, "amount")) || (orderID == "" && referenceID == "") ||
+		(orderID != "" && !idPattern.MatchString(orderID)) || (referenceID != "" && !idPattern.MatchString(referenceID)) {
 		return nil, &myanmarpayments.SignatureVerificationError{Message: "Wave Money callback hash verification failed.", Raw: payload}
 	}
 
 	gatewayStatus := values.Trimmed(payload, "status")
-	orderID := values.Get(payload, "orderId")
 	if orderID == "" {
-		orderID = values.Get(payload, "merchantReferenceId")
+		orderID = referenceID
 	}
 
 	return &myanmarpayments.PaymentCallback{

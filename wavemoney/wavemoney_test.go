@@ -218,13 +218,15 @@ func TestValidationFollowsWaveRules(t *testing.T) {
 		mutate func(*PaymentData)
 		field  string
 	}{
-		"no items":           {func(d *PaymentData) { d.Items = nil }, "items"},
-		"ftp callback":       {func(d *PaymentData) { d.CallbackURL = "ftp://shop.test/cb" }, "callbackUrl"},
-		"zero item amount":   {func(d *PaymentData) { d.Items = []Item{{"A", myanmarpayments.Kyat(0)}} }, "items.0.amount"},
-		"missing return url": {func(d *PaymentData) { d.ReturnURL = "" }, "returnUrl"},
-		"decimal item":       {func(d *PaymentData) { d.Items = []Item{{"A", myanmarpayments.MustParseAmount("250.50")}} }, "items.0.amount"},
-		"negative item":      {func(d *PaymentData) { d.Items = []Item{{"A", myanmarpayments.Kyat(-1)}} }, "items.0.amount"},
-		"decimal total":      {func(d *PaymentData) { d.Amount = myanmarpayments.MustParseAmount("250.50") }, "amount"},
+		"no items":               {func(d *PaymentData) { d.Items = nil }, "items"},
+		"ftp callback":           {func(d *PaymentData) { d.CallbackURL = "ftp://shop.test/cb" }, "callbackUrl"},
+		"zero item amount":       {func(d *PaymentData) { d.Items = []Item{{"A", myanmarpayments.Kyat(0)}} }, "items.0.amount"},
+		"missing return url":     {func(d *PaymentData) { d.ReturnURL = "" }, "returnUrl"},
+		"decimal item":           {func(d *PaymentData) { d.Items = []Item{{"A", myanmarpayments.MustParseAmount("250.50")}} }, "items.0.amount"},
+		"negative item":          {func(d *PaymentData) { d.Items = []Item{{"A", myanmarpayments.Kyat(-1)}} }, "items.0.amount"},
+		"decimal total":          {func(d *PaymentData) { d.Amount = myanmarpayments.MustParseAmount("250.50") }, "amount"},
+		"order id with a dot":    {func(d *PaymentData) { d.OrderID = "ORDER.1" }, "orderId"},
+		"reference with a space": {func(d *PaymentData) { d.MerchantReferenceID = "ref 1" }, "merchantReferenceId"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -374,5 +376,36 @@ func TestInvalidPaymentOverridesAreRejected(t *testing.T) {
 				t.Fatalf("expected %q on %s, got %v", tc.message, tc.field, err)
 			}
 		})
+	}
+}
+
+func TestCallbacksWithMalformedValuesFailVerification(t *testing.T) {
+	cases := map[string]map[string]any{
+		"missing amount":           {"amount": nil},
+		"negative amount":          {"amount": "-1000"},
+		"amount with a comma":      {"amount": "1,000"},
+		"amount with two dots":     {"amount": "1.0.0"},
+		"order id with a space":    {"orderId": "ORDER 1"},
+		"order id with a colon":    {"orderId": "ORDER:1"},
+		"reference with a slash":   {"merchantReferenceId": "ref/1"},
+		"neither id":               {"orderId": "", "merchantReferenceId": nil},
+		"fallback reference wrong": {"orderId": nil, "merchantReferenceId": "ref 1"},
+	}
+	for name, overrides := range cases {
+		t.Run(name, func(t *testing.T) {
+			payload := map[string]any{"status": "PAYMENT_CONFIRMED", "orderId": "ORDER_1", "merchantReferenceId": "ref-001", "amount": "1000"}
+			for key, value := range overrides {
+				payload[key] = value
+			}
+			var sigErr *myanmarpayments.SignatureVerificationError
+			if _, err := newGateway(t, nil).HandleCallback(signedCallback(t, payload, "test-secret")); !errors.As(err, &sigErr) {
+				t.Fatalf("expected SignatureVerificationError, got %v", err)
+			}
+		})
+	}
+
+	payload := map[string]any{"status": "PAYMENT_CONFIRMED", "orderId": "ORDER_1", "merchantReferenceId": "ref-001", "amount": "1000.50"}
+	if callback, err := newGateway(t, nil).HandleCallback(signedCallback(t, payload, "test-secret")); err != nil || callback.OrderID != "ORDER_1" {
+		t.Fatalf("got %+v %v", callback, err)
 	}
 }
