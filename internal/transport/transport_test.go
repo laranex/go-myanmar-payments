@@ -56,6 +56,19 @@ func TestNewUsesTheDefaultClientWhenNil(t *testing.T) {
 	}
 }
 
+func TestTheDefaultClientNeverFollowsRedirects(t *testing.T) {
+	target, _ := server(t, http.StatusOK, `{"ok":true}`)
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(redirect.Close)
+
+	response, err := New(nil, 5).PostJSON(context.Background(), redirect.URL, map[string]any{}, nil)
+	if err != nil || response.Status != http.StatusTemporaryRedirect || response.Successful() {
+		t.Fatalf("got %+v, %v; want the 307 itself", response, err)
+	}
+}
+
 func TestPostJSONSendsACompactBodyWithoutHTMLEscaping(t *testing.T) {
 	s, got := server(t, http.StatusOK, `{"result":"SUCCESS","amount":1000.50}`)
 

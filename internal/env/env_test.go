@@ -37,6 +37,9 @@ func TestSecondsReadsAWholeNumberGreaterThanZero(t *testing.T) {
 		"five":                    -1,
 		"1.5":                     -1,
 		"99999999999999999999999": -1,
+		"2147483647":              2147483647,
+		"2147483648":              -1,
+		"\u00a030":                -1,
 	}
 
 	for value, want := range cases {

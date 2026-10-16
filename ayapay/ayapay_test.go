@@ -392,7 +392,7 @@ func TestPaymentDataRejectsColonsInSignedValues(t *testing.T) {
 	cases := map[string]func(*PaymentData){
 		"orderId":     func(d *PaymentData) { d.OrderID = "ORD:123456" },
 		"description": func(d *PaymentData) { d.Description = "Order: 1" },
-		"userRefs.1":  func(d *PaymentData) { d.UserRefs = []string{"a", "b:c"} },
+		"userRefs":    func(d *PaymentData) { d.UserRefs = []string{"a", "b:c"} },
 	}
 	for field, mutate := range cases {
 		t.Run(field, func(t *testing.T) {

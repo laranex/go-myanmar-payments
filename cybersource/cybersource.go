@@ -95,15 +95,23 @@ func (g *Gateway) Initiate(data PaymentData) (*myanmarpayments.FormPayment, erro
 // no empty or repeated names and no name holding "=" or ","; and decision must be ACCEPT,
 // DECLINE, REVIEW, ERROR or CANCEL. Otherwise a customer-typed signed value such as
 // "x,decision=ACCEPT" could be re-partitioned into a different result.
+//
+// A bad field list, a signature that is not a string or a wrong signature fails with
+// "CyberSource callback signature verification failed."; a signed post without a signed
+// decision and req_reference_number, or with an unknown decision, fails with "CyberSource
+// callback is malformed.".
 func (g *Gateway) HandleCallback(request *myanmarpayments.CallbackRequest) (*myanmarpayments.PaymentCallback, error) {
 	payload := request.Input()
 	expected, ok := g.sign(payload)
 	signed, wellFormed := signedNames(payload)
-	decision := strings.ToUpper(values.Trimmed(payload, "decision"))
-	_, knownDecision := statuses[decision]
-	if !ok || !wellFormed || !hmac.Equal([]byte(expected), []byte(values.Get(payload, "signature"))) ||
-		!signed["decision"] || !signed["req_reference_number"] || !signed["signed_field_names"] || !knownDecision {
+	signature, isString := payload["signature"].(string)
+	if !ok || !wellFormed || !signed["signed_field_names"] || !isString || !hmac.Equal([]byte(expected), []byte(signature)) {
 		return nil, &myanmarpayments.SignatureVerificationError{Message: "CyberSource callback signature verification failed.", Raw: payload}
+	}
+
+	decision := strings.ToUpper(values.Trimmed(payload, "decision"))
+	if _, known := statuses[decision]; !known || !signed["decision"] || !signed["req_reference_number"] {
+		return nil, &myanmarpayments.SignatureVerificationError{Message: "CyberSource callback is malformed.", Raw: payload}
 	}
 
 	signedValue := func(name string) string {

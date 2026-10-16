@@ -285,7 +285,7 @@ func TestTokenLifetimeIsReadFromTheLeadingDigitsOfExpiresIn(t *testing.T) {
 	cases := map[string]time.Duration{
 		`28800`: 28740 * time.Second, `"28800"`: 28740 * time.Second, `28800.0`: 28740 * time.Second,
 		`"1e5"`: time.Minute, `90`: time.Minute, `0`: 3540 * time.Second, `"abc"`: 3540 * time.Second,
-		`null`: 3540 * time.Second,
+		`null`: 3540 * time.Second, `" 28800"`: 28740 * time.Second, `"\t28800s"`: 28740 * time.Second,
 	}
 	for raw, want := range cases {
 		t.Run(raw, func(t *testing.T) {

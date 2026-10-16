@@ -244,7 +244,7 @@ func (g *Gateway) call(ctx context.Context, endpoint, method, version string, bi
 		code, message := values.Get(result, "code"), values.Get(result, "msg")
 		text := fmt.Sprintf("KBZ Pay %s failed with HTTP %d.", endpoint, response.Status)
 		if code != "" {
-			text = strings.TrimRight(fmt.Sprintf("KBZ Pay %s failed: [%s] %s", endpoint, code, message), " ")
+			text = strings.TrimRight(fmt.Sprintf("KBZ Pay %s failed: [%s] %s", endpoint, code, message), values.ASCIISpace)
 		}
 		return nil, &myanmarpayments.APIError{Message: text, GatewayCode: code, GatewayMessage: message, HTTPStatus: response.Status, Raw: body}
 	}

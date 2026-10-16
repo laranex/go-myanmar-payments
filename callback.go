@@ -45,8 +45,9 @@ const MaxCallbackBodyBytes = 64 << 10
 // larger than MaxCallbackBodyBytes.
 var ErrCallbackBodyTooLarge = errors.New("myanmarpayments: The callback body is too large")
 
-// NewCallbackRequestFromHTTP reads the body of r once and keeps its headers and query.
-// The body of r is replaced so it can still be read afterwards. A body larger than
+// NewCallbackRequestFromHTTP reads the body of r once and keeps its headers and query. The query
+// is decoded like a urlencoded body (see ParsedBody): names are kept exactly as sent and a bad
+// "%" escape or a ";" never drops a pair. The body of r is replaced so it can still be read afterwards. A body larger than
 // MaxCallbackBodyBytes is not read past the limit and returns an error wrapping
 // ErrCallbackBodyTooLarge.
 func NewCallbackRequestFromHTTP(r *http.Request) (*CallbackRequest, error) {
@@ -63,7 +64,7 @@ func NewCallbackRequestFromHTTP(r *http.Request) (*CallbackRequest, error) {
 		r.Body = io.NopCloser(bytes.NewReader(body))
 	}
 
-	return NewCallbackRequest(body, r.Header.Clone(), r.URL.Query()), nil
+	return NewCallbackRequest(body, r.Header.Clone(), values.DecodeForm(r.URL.RawQuery)), nil
 }
 
 // NewCallbackRequestFromJSON encodes payload as a JSON body, e.g. to replay a callback stored
@@ -81,9 +82,14 @@ func NewCallbackRequestFromJSON(payload any, header http.Header) (*CallbackReque
 	return NewCallbackRequest(body, header, nil), nil
 }
 
-// ParsedBody decodes the body as JSON (numbers kept as json.Number) or as a urlencoded form.
+// ParsedBody decodes the body as JSON (numbers kept as json.Number) or as a urlencoded form,
+// like the other Laranex SDKs. Only ASCII whitespace and NUL around the body are trimmed, so a
+// body that starts with a byte order mark is read as a form. A form is split on "&" and at the
+// first "=" of each pair; "+" is a space, a valid %XX escape is decoded and any other "%" is
+// kept as it is; ";" is not a separator, names are kept exactly as sent and the first value of
+// a repeated name wins.
 func (r *CallbackRequest) ParsedBody() map[string]any {
-	body := bytes.TrimSpace(r.Body)
+	body := bytes.Trim(r.Body, values.ASCIISpace)
 	if len(body) == 0 {
 		return map[string]any{}
 	}
@@ -92,10 +98,7 @@ func (r *CallbackRequest) ParsedBody() map[string]any {
 		return decoded
 	}
 
-	// A malformed pair (e.g. a bad percent escape) is skipped; the other pairs are kept.
-	form, _ := url.ParseQuery(string(body))
-
-	return valuesToMap(form)
+	return valuesToMap(values.DecodeForm(string(body)))
 }
 
 // Input returns the parsed body merged over the query string.
@@ -200,13 +203,16 @@ type PaymentStatusResult struct {
 // IsSuccessful reports whether the customer paid.
 func (r PaymentStatusResult) IsSuccessful() bool { return r.Status == StatusSuccessful }
 
-// HeaderValue returns the first value of the named header, case-insensitively.
+// HeaderValue returns the named header, case-insensitively. A repeated header's values are
+// joined with ", ", like the other Laranex SDKs, so a header sent twice never matches a single
+// expected value.
 func (r *CallbackRequest) HeaderValue(name string) string {
-	for key, values := range r.Header {
-		if strings.EqualFold(key, name) && len(values) > 0 {
-			return values[0]
+	var joined []string
+	for key, list := range r.Header {
+		if strings.EqualFold(key, name) {
+			joined = append(joined, list...)
 		}
 	}
 
-	return ""
+	return strings.Join(joined, ", ")
 }

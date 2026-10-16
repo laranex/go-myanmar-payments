@@ -5,10 +5,10 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
-	"strings"
 
 	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
 	"github.com/laranex/go-myanmar-payments/v4/internal/validate"
+	"github.com/laranex/go-myanmar-payments/v4/internal/values"
 )
 
 // Item is a line item shown on Wave's payment page.
@@ -85,15 +85,18 @@ func (d PaymentData) ResolvedAmount() myanmarpayments.Amount {
 	return myanmarpayments.MustParseAmount(total.String())
 }
 
-// Validate checks the request against Wave's documented rules (Pay with Wave API spec v1.3).
-// Lengths are counted in bytes of UTF-8.
+// Validate checks the request against Wave's documented rules (Pay with Wave API spec v1.3), in
+// the same order as the other Laranex SDKs: orderId, callbackUrl, returnUrl, description, items,
+// merchantReferenceId, merchantName, timeToLiveSeconds, additionalField3 to additionalField5,
+// then each item's name and amount, then amount. Without Amount, the total is the exact sum of
+// the items: no items gives "The amount field is required.", and an item amount that is
+// invalid or has decimals skips the total check (the item's own error is reported). Lengths are
+// counted in bytes of UTF-8.
 func (d PaymentData) Validate() error {
 	v := validate.New().
 		Required("orderId", d.OrderID).
 		Max("orderId", d.OrderID, 100).
 		Pattern("orderId", d.OrderID, idPattern, idDescription).
-		Max("merchantReferenceId", d.MerchantReferenceID, 100).
-		Pattern("merchantReferenceId", d.MerchantReferenceID, idPattern, idDescription).
 		Required("callbackUrl", d.CallbackURL).
 		URL("callbackUrl", d.CallbackURL).
 		Max("callbackUrl", d.CallbackURL, 255)
@@ -103,7 +106,9 @@ func (d PaymentData) Validate() error {
 		Required("description", d.Description).
 		Max("description", d.Description, 255).
 		When(len(d.Items) == 0, "items", "The items field must have at least one item.").
-		When(d.MerchantName != "" && strings.TrimSpace(d.MerchantName) == "", "merchantName", "The merchantName field is required.").
+		Max("merchantReferenceId", d.MerchantReferenceID, 100).
+		Pattern("merchantReferenceId", d.MerchantReferenceID, idPattern, idDescription).
+		When(d.MerchantName != "" && values.IsBlank(d.MerchantName), "merchantName", "The merchantName field is required.").
 		When(d.TimeToLiveSeconds != nil && *d.TimeToLiveSeconds < 1, "timeToLiveSeconds", "The timeToLiveSeconds field must be greater than 0.").
 		Max("additionalField3", d.AdditionalField3, 50).
 		Max("additionalField4", d.AdditionalField4, 50).

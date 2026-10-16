@@ -78,17 +78,28 @@ func TestOnlyTheFirstFailurePerFieldIsKept(t *testing.T) {
 	}
 }
 
+func TestLengthWithEqualBoundsNamesOneLength(t *testing.T) {
+	errs := failures(t, New().Length("code", "12", 3, 3).Length("range", "12", 3, 5).Err())
+	if errs["code"] != "The code field must be 3 characters." || errs["range"] != "The range field must be between 3 and 5 characters." {
+		t.Fatalf("errors %v", errs)
+	}
+}
+
 func TestURLRules(t *testing.T) {
 	errs := failures(t, New().
 		URL("relative", "/callback").
 		URL("ftp", "ftp://shop.test/callback").
 		URL("broken", "http://[::1").
+		URL("space", "https://shop.test/a b").
+		URL("unicode", "https://bücher.de/cb").
+		URL("underscore", "https://shop_test.com/cb").
+		URL("port", "https://shop.test:65536/cb").
 		URL("http_ok", "http://shop.test/callback").
 		URL("upper_ok", "HTTPS://shop.test/callback").
 		URL("skipped", "").
 		Err())
 
-	for _, field := range []string{"relative", "ftp", "broken"} {
+	for _, field := range []string{"relative", "ftp", "broken", "space", "unicode", "underscore", "port"} {
 		if errs[field] != "The "+field+" field must be a valid http or https URL." {
 			t.Errorf("%s = %q, want the valid URL message", field, errs[field])
 		}
@@ -112,7 +123,7 @@ func TestAmountFollowsTheGatewayRule(t *testing.T) {
 		want   string
 	}{
 		{"unset", myanmarpayments.Amount{}, whole, "The amount field is required."},
-		{"negative", myanmarpayments.Kyat(-1), whole, "The amount field must be a non-negative number such as 1000 or 1000.50."},
+		{"negative", myanmarpayments.Kyat(-1), whole, "The amount field must not be negative."},
 		{"decimal where whole required", myanmarpayments.MustParseAmount("10.5"), whole, "Wave Pay does not accept decimal amounts; the amount field must be a whole number."},
 		{"too many decimals", myanmarpayments.MustParseAmount("10.555"), twoPlaces, "KBZ Pay accepts at most 2 decimal places; the amount field has 3."},
 		{"zero", myanmarpayments.Kyat(0), twoPlaces, "The amount field must be greater than 0."},

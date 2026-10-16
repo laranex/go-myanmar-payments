@@ -25,7 +25,7 @@ Requires Go 1.22+ and uses only the standard library. Import the root as `myanma
 
 `payments.FromEnv(os.Getenv, payments.Options{})` reads `KBZ_PAY_*`, `WAVE_PAY_*`, `AYA_PAY_*`, `YOMA_MMQR_*` and `CYBER_SOURCE_*` (the same variables as the PHP, Node and Python SDKs), plus `MYANMAR_PAYMENTS_HTTP_TIMEOUT`.
 
-- Every setting of a gateway you use is required and has no default, except the HTTP timeout (`TimeoutSeconds`, `MYANMAR_PAYMENTS_HTTP_TIMEOUT`, not used by CyberSource): 0 or unset means 30 seconds (`myanmarpayments.DefaultTimeoutSeconds`); a negative or non-whole value is rejected.
+- Every setting of a gateway you use is required and has no default, except the HTTP timeout (`TimeoutSeconds`, `MYANMAR_PAYMENTS_HTTP_TIMEOUT`, not used by CyberSource): 0 or unset means 30 seconds (`myanmarpayments.DefaultTimeoutSeconds`); a negative or non-whole value, or one above 2147483647, is rejected. The default client never follows redirects.
 - URLs: `KBZ_PAY_BASE_URL`, `KBZ_PAY_PWA_BASE_REDIRECT_URL`, `WAVE_PAY_BASE_URL`, `WAVE_PAY_BASE_REDIRECT_URL`, `AYA_PAY_BASE_URL`, `YOMA_MMQR_BASE_URL`, `CYBER_SOURCE_BASE_URL`, set to production's or the gateway's UAT ones. The `Production*` constants (e.g. `kbzpay.ProductionAPIURL`, `wavepay.ProductionURL`) name production's; they are not defaults.
 - Time to live: `KBZ_PAY_TIME_TO_LIVE_IN_MINUTES` (`TimeToLiveMinutes`, 1 to 120) and `WAVE_PAY_TIME_TO_LIVE_IN_SECONDS` (`TimeToLiveSeconds`, greater than 0); a payment's own value overrides them.
 - Also required: `WAVE_PAY_MERCHANT_NAME`, `YOMA_MMQR_API_VERSION` (e.g. `v1rc`) and `YOMA_MMQR_WEBHOOK_SECRET` (every Yoma callback must carry it in `X-Webhook-Secret`).
@@ -44,7 +44,7 @@ kbz, err := gateways.KBZPay() // also WavePay(), AYAPay(), YomaMMQR(), CyberSour
 
 ### Amounts
 
-Amounts are `myanmarpayments.Kyat(1000)` or `ParseAmount("1000.50")` (`MustParseAmount` for constants); never a `float64`. Only KBZ Pay (up to 2 decimals) and CyberSource accept decimals; Wave, AYA and Yoma take whole kyat. Invalid data returns `*InvalidPaymentDataError` with `Errors` per field, before any request is sent. Compare a gateway's amount by value with `amount.Equals(callback.Amount)`.
+Amounts are `myanmarpayments.Kyat(1000)` or `ParseAmount("1000.50")` (`MustParseAmount` for constants); never a `float64`. Only KBZ Pay (up to 2 decimals) and CyberSource accept decimals; Wave, AYA and Yoma take whole kyat. Invalid data returns `*InvalidPaymentDataError` with `Errors` per field, before any request is sent (a negative `Kyat(-1)` gives `The amount field must not be negative.`). Callback, return and cancel URLs must be ASCII `http://` or `https://` URLs with a valid host name (no spaces, `_` or non-ASCII letters; use the `xn--` form). Compare a gateway's amount by value with `amount.Equals(callback.Amount)`.
 
 ### Start a payment
 
@@ -67,7 +67,7 @@ http.Redirect(w, r, payment.URL, http.StatusFound)
 - `*QrPayment` from `kbz.QR(ctx, data)` (encode `QRString`) and `yoma.Initiate(ctx, data)` (`QRImageDataURI("image/png")`, `ExpiresAt`, `Reference`). A Yoma QR lives `yomammqr.QRLifetime` (120 seconds); renew it with `yoma.RenewQR(ctx, orderID)`.
 - `*AppPayment` from `kbz.App(ctx, data)`: JSON-encode it (`orderId`, `orderInfo`, `sign`, `signType`) for your mobile app.
 
-AYA needs a channel: `aya.Services(ctx)` lists `ayapay.Service` entries (`Key`, `Supports(method)`), then `aya.Initiate(ayapay.PaymentData{OrderID: "ORDER123", Amount: myanmarpayments.Kyat(1000), Channel: "kbz_pay", Method: ayapay.MethodQR})`. AYA's `OrderID`, `Description` and `UserRefs` must not contain `:`.
+AYA needs a channel: `aya.Services(ctx)` lists `ayapay.Service` entries (`Key`, `Supports(method)`), then `aya.Initiate(ayapay.PaymentData{OrderID: "ORDER123", Amount: myanmarpayments.Kyat(1000), Channel: "kbz_pay", Method: ayapay.MethodQR})`. AYA's `OrderID`, `Description` and `UserRefs` must not contain `:` (a user ref's error is under `userRefs`).
 
 ### Handle the callback
 
@@ -93,6 +93,7 @@ return callback.Acknowledgement.Write(w)
 ```
 
 - Give the package the raw body: `NewCallbackRequestFromHTTP` reads it once and puts it back, so don't call `r.ParseForm()` first. Bodies over `myanmarpayments.MaxCallbackBodyBytes` (64 KiB) return an error wrapping `ErrCallbackBodyTooLarge`.
+- A bad or wrong signature fails with `… signature`/`hash`/`checksum verification failed.`; a correctly signed callback with bad values fails with `Wave Pay callback is malformed.`, `AYA Pay callback payload is malformed.` or `CyberSource callback is malformed.`. Both are `*SignatureVerificationError`.
 - Check AYA's browser return with `aya.VerifyRedirect(request)`.
 - Yoma MMQR callbacks need the `X-Webhook-Secret` header (`YOMA_MMQR_WEBHOOK_SECRET`) and carry no amount: confirm with `yoma.Status(ctx, reference)` and trust your stored amount.
 - For production, store the verified callback, acknowledge immediately, then process it once in the background.

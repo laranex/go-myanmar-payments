@@ -15,6 +15,7 @@ import (
 	"github.com/laranex/go-myanmar-payments/v4/ayapay"
 	"github.com/laranex/go-myanmar-payments/v4/cybersource"
 	"github.com/laranex/go-myanmar-payments/v4/internal/testutil"
+	"github.com/laranex/go-myanmar-payments/v4/internal/validate"
 	"github.com/laranex/go-myanmar-payments/v4/kbzpay"
 	"github.com/laranex/go-myanmar-payments/v4/wavepay"
 	"github.com/laranex/go-myanmar-payments/v4/yomammqr"
@@ -88,6 +89,9 @@ func TestParityCallbacks(t *testing.T) {
 					var sigErr *myanmarpayments.SignatureVerificationError
 					if !errors.As(err, &sigErr) {
 						t.Fatalf("expected a SignatureVerificationError, got %v (%+v)", err, callback)
+					}
+					if sigErr.Message != expected["message"] {
+						t.Fatalf("message %q, want %q", sigErr.Message, expected["message"])
 					}
 					return
 				}
@@ -619,6 +623,507 @@ func TestParityKbzPayTimeToLive(t *testing.T) {
 		}
 		if got, _ := doer.biz["timeout_express"].(string); got != c["timeout_express"] || payment.ExpiresAt.IsZero() {
 			t.Errorf("case %v: timeout_express %q (expires %v)", c, got, payment.ExpiresAt)
+		}
+	}
+}
+
+// queueDoer is a fake HTTP client that answers with its responses in order (the last one again
+// once they run out) and records every request body.
+type queueDoer struct {
+	responses []queuedResponse
+	bodies    [][]byte
+}
+
+type queuedResponse struct {
+	status int
+	body   string
+}
+
+func (d *queueDoer) Do(request *http.Request) (*http.Response, error) {
+	body, err := io.ReadAll(request.Body)
+	if err != nil {
+		return nil, err
+	}
+	d.bodies = append(d.bodies, body)
+	response := d.responses[min(len(d.bodies), len(d.responses))-1]
+	return &http.Response{
+		StatusCode: response.status,
+		Header:     http.Header{"Content-Type": {"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(response.body)),
+	}, nil
+}
+
+// last returns the last request body.
+func (d *queueDoer) last() []byte { return d.bodies[len(d.bodies)-1] }
+
+func parityInt(t *testing.T, value any) int {
+	t.Helper()
+	number, err := strconv.Atoi(value.(json.Number).String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return number
+}
+
+// parityAmount reads a vector amount: a string is parsed as a decimal, a number is whole kyat
+// (negative ones included) and null is unset.
+func parityAmount(t *testing.T, value any) myanmarpayments.Amount {
+	t.Helper()
+	switch amount := value.(type) {
+	case string:
+		return myanmarpayments.MustParseAmount(amount)
+	case json.Number:
+		n, err := amount.Int64()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return myanmarpayments.Kyat(n)
+	default:
+		return myanmarpayments.Amount{}
+	}
+}
+
+// parityErrors returns the field errors of err, or nil when err is nil.
+func parityErrors(t *testing.T, err error) map[string]string {
+	t.Helper()
+	if err == nil {
+		return nil
+	}
+	var invalid *myanmarpayments.InvalidPaymentDataError
+	if !errors.As(err, &invalid) {
+		t.Fatalf("expected an InvalidPaymentDataError, got %v", err)
+	}
+	return invalid.Errors
+}
+
+func parityExpectErrors(t *testing.T, name string, err error, want any) {
+	t.Helper()
+	got := parityErrors(t, err)
+	expected := map[string]string{}
+	for field, message := range want.(map[string]any) {
+		expected[field] = message.(string)
+	}
+	if fmt.Sprint(got) != fmt.Sprint(expected) {
+		t.Errorf("%s: errors %v, want %v", name, got, expected)
+	}
+}
+
+// parityAPIError checks an *APIError against a vector's message, gateway_code and
+// gateway_message (null is the empty string in Go).
+func parityAPIError(t *testing.T, name string, err error, want map[string]any) {
+	t.Helper()
+	var apiErr *myanmarpayments.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("%s: expected an APIError, got %v", name, err)
+	}
+	code, _ := want["gateway_code"].(string)
+	message, _ := want["gateway_message"].(string)
+	if apiErr.Message != want["message"] || apiErr.GatewayCode != code || apiErr.GatewayMessage != message {
+		t.Errorf("%s: got %q %q %q, want %v", name, apiErr.Message, apiErr.GatewayCode, apiErr.GatewayMessage, want)
+	}
+}
+
+// parityVars returns the shared config env with overrides applied (a JSON null removes the
+// variable).
+func parityVars(vectors map[string]any, overrides map[string]any) map[string]string {
+	vars := map[string]string{}
+	for key, value := range vectors["config"].(map[string]any)["env"].(map[string]any) {
+		vars[key] = value.(string)
+	}
+	for key, value := range overrides {
+		if text, ok := value.(string); ok {
+			vars[key] = text
+		} else {
+			delete(vars, key)
+		}
+	}
+	return vars
+}
+
+func TestParityURLValidation(t *testing.T) {
+	vector := testutil.Fixture(t, "parity/vectors.json")["url_validation"].(map[string]any)
+	field := vector["field"].(string)
+	for _, item := range vector["cases"].([]any) {
+		c := item.(map[string]any)
+		got := parityErrors(t, validate.New().URL(field, c["url"].(string)).Err())
+		if c["valid"] == true && got != nil || c["valid"] != true && got[field] != vector["message"] {
+			t.Errorf("%q: errors %v, want valid %v", c["url"], got, c["valid"])
+		}
+	}
+}
+
+func TestParityQueryEscape(t *testing.T) {
+	vectors := testutil.Fixture(t, "parity/vectors.json")
+	getenv := parityEnv(vectors, "", nil)
+	for _, item := range vectors["query_escape"].(map[string]any)["cases"].([]any) {
+		c := item.(map[string]any)
+		input, escaped := c["input"].(string), c["escaped"].(string)
+
+		kbzDoer := &queueDoer{responses: []queuedResponse{{200, `{"Response":{"result":"SUCCESS","code":"0","prepay_id":"P1","qrCode":"qr"}}`}}}
+		kbz, err := kbzpay.New(kbzpay.ConfigFromEnv(getenv), kbzDoer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := kbz.QR(context.Background(), kbzpay.PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb", CallbackInfo: input}); err != nil {
+			t.Fatal(err)
+		}
+		var sent struct {
+			Request struct {
+				BizContent map[string]string `json:"biz_content"`
+			}
+		}
+		if err := json.Unmarshal(kbzDoer.last(), &sent); err != nil {
+			t.Fatal(err)
+		}
+		if got := sent.Request.BizContent["callback_info"]; got != escaped {
+			t.Errorf("callback_info %q, want %q", got, escaped)
+		}
+
+		response, _ := json.Marshal(map[string]string{"message": "success", "transaction_id": input})
+		wave, err := wavepay.New(wavepay.ConfigFromEnv(getenv), &queueDoer{responses: []queuedResponse{{200, string(response)}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		payment, err := wave.Initiate(context.Background(), parityWavePayData(vectors["wave_pay_limits"].(map[string]any)["data"].(map[string]any)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasSuffix(payment.URL, "/authenticate?transaction_id="+escaped) {
+			t.Errorf("redirect %q, want transaction_id=%s", payment.URL, escaped)
+		}
+	}
+}
+
+func TestParityASCIITrim(t *testing.T) {
+	vectors := testutil.Fixture(t, "parity/vectors.json")
+	vector := vectors["ascii_trim"].(map[string]any)
+	for _, item := range vector["env"].([]any) {
+		c := item.(map[string]any)
+		gateway, err := kbzpay.New(kbzpay.ConfigFromEnv(parityEnv(vectors, "KBZ_PAY_APP_ID", c["value"])), nil)
+		if want, ok := c["app_id"].(string); ok {
+			if err != nil || gateway.Config().AppID != want {
+				t.Errorf("%q: app id %v, want %q", c["value"], err, want)
+			}
+		} else if err == nil || err.Error() != "myanmarpayments: "+c["message"].(string) {
+			t.Errorf("%q: got %v, want %v", c["value"], err, c["message"])
+		}
+	}
+	for _, item := range vector["kbz_pay_order_id"].([]any) {
+		c := item.(map[string]any)
+		data := kbzpay.PaymentData{OrderID: c["order_id"].(string), Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb"}
+		parityExpectErrors(t, fmt.Sprintf("%q", c["order_id"]), data.Validate(), c["errors"])
+	}
+}
+
+// Go settings are typed, so only the text cases of config_setting_types apply: integers,
+// floats and booleans cannot be given as a string setting.
+func TestParityConfigSettingTypes(t *testing.T) {
+	vector := testutil.Fixture(t, "parity/vectors.json")["config_setting_types"].(map[string]any)
+	config := vector["config"].(map[string]any)
+	for _, item := range vector["cases"].([]any) {
+		c := item.(map[string]any)
+		value, ok := c["value"].(string)
+		if !ok {
+			continue
+		}
+		gateway, err := cybersource.New(cybersource.Config{
+			ProfileID: value, AccessKey: config["access_key"].(string), SecretKey: config["secret_key"].(string), BaseURL: config["base_url"].(string),
+		})
+		if want, ok := c["result"].(string); ok {
+			if err != nil || gateway.Config().ProfileID != want {
+				t.Errorf("%q: %v, want %q", value, err, want)
+			}
+		} else if err == nil || err.Error() != "myanmarpayments: "+vector["message"].(string) {
+			t.Errorf("%q: got %v, want %v", value, err, vector["message"])
+		}
+	}
+}
+
+func parityConfigError(t *testing.T, name string, err error, gateway, key, message any) {
+	t.Helper()
+	var configErr *myanmarpayments.ConfigurationError
+	if !errors.As(err, &configErr) {
+		t.Fatalf("%s: got %v, want a ConfigurationError", name, err)
+	}
+	if configErr.Gateway != gateway || configErr.Key != key || err.Error() != "myanmarpayments: "+message.(string) {
+		t.Errorf("%s: got %s %s %q, want %v %v %v", name, configErr.Gateway, configErr.Key, err, gateway, key, message)
+	}
+}
+
+func TestParityConfigIntegerLimits(t *testing.T) {
+	vectors := testutil.Fixture(t, "parity/vectors.json")
+	for _, item := range vectors["config_integer_limits"].(map[string]any)["cases"].([]any) {
+		c := item.(map[string]any)
+		variable := c["variable"].(string)
+		_, times, err := parityConfigGateway(c["gateway"].(string), parityVars(vectors, map[string]any{variable: c["value"]}))
+		name := fmt.Sprintf("%s %s=%s", c["gateway"], variable, c["value"])
+		if seconds, ok := c["seconds"]; ok {
+			key := "timeout_in_seconds"
+			if variable == "WAVE_PAY_TIME_TO_LIVE_IN_SECONDS" {
+				key = "time_to_live_in_seconds"
+			}
+			if err != nil || times[key] != parityInt(t, seconds) {
+				t.Errorf("%s: %v %v, want %v", name, err, times, seconds)
+			}
+			continue
+		}
+		parityConfigError(t, name, err, c["gateway"], c["key"], c["message"])
+	}
+}
+
+func TestParityConfigValidationOrder(t *testing.T) {
+	vectors := testutil.Fixture(t, "parity/vectors.json")
+	for _, item := range vectors["config_validation_order"].(map[string]any)["cases"].([]any) {
+		c := item.(map[string]any)
+		_, _, err := parityConfigGateway(c["gateway"].(string), parityVars(vectors, c["env"].(map[string]any)))
+		parityConfigError(t, fmt.Sprintf("%s %v", c["gateway"], c["env"]), err, c["gateway"], c["key"], c["message"])
+	}
+}
+
+// parityWavePayCase builds Wave Pay payment data from snake_case vector data: items are
+// [name, amount] pairs and amount, merchant_name and time_to_live_in_seconds are optional.
+func parityWavePayCase(t *testing.T, data map[string]any) *wavepay.PaymentData {
+	t.Helper()
+	text := func(key string) string {
+		value, _ := data[key].(string)
+		return value
+	}
+	payment := &wavepay.PaymentData{
+		OrderID: text("order_id"), MerchantReferenceID: text("merchant_reference_id"),
+		CallbackURL: text("callback_url"), ReturnURL: text("return_url"), Description: text("description"),
+		MerchantName: text("merchant_name"), Amount: parityAmount(t, data["amount"]),
+		AdditionalField3: text("additional_field_3"), AdditionalField4: text("additional_field_4"), AdditionalField5: text("additional_field_5"),
+	}
+	for _, entry := range data["items"].([]any) {
+		pair := entry.([]any)
+		payment.Items = append(payment.Items, wavepay.Item{Name: pair[0].(string), Amount: parityAmount(t, pair[1])})
+	}
+	if seconds, ok := data["time_to_live_in_seconds"]; ok {
+		value := parityInt(t, seconds)
+		payment.TimeToLiveSeconds = &value
+	}
+	return payment
+}
+
+func TestParityNegativeAmounts(t *testing.T) {
+	for _, item := range testutil.Fixture(t, "parity/vectors.json")["negative_amounts"].(map[string]any)["cases"].([]any) {
+		c := item.(map[string]any)
+		data := c["data"].(map[string]any)
+		text := func(key string) string { return data[key].(string) }
+		var err error
+		switch c["gateway"] {
+		case "kbz_pay":
+			err = kbzpay.PaymentData{OrderID: text("order_id"), Amount: parityAmount(t, data["amount"]), CallbackURL: text("callback_url")}.Validate()
+		case "wave_pay":
+			err = parityWavePayCase(t, data).Validate()
+		case "aya_pay":
+			err = ayapay.PaymentData{OrderID: text("order_id"), Amount: parityAmount(t, data["amount"]), Channel: text("channel"), Method: ayapay.Method(text("method"))}.Validate()
+		case "yoma_mmqr":
+			err = yomammqr.PaymentData{OrderID: text("order_id"), Amount: parityAmount(t, data["amount"]), Description: text("description")}.Validate()
+		case "cyber_source":
+			err = cybersource.PaymentData{
+				OrderID: text("order_id"), Amount: parityAmount(t, data["amount"]), CallbackURL: text("callback_url"), Currency: text("currency"),
+				TransactionType: cybersource.TransactionType(text("transaction_type")), Locale: text("locale"),
+			}.Validate()
+		default:
+			t.Fatalf("unknown gateway %v", c["gateway"])
+		}
+		parityExpectErrors(t, fmt.Sprint(c["gateway"], data), err, c["errors"])
+	}
+}
+
+func TestParityWavePayValidation(t *testing.T) {
+	vector := testutil.Fixture(t, "parity/vectors.json")["wave_pay_validation"].(map[string]any)
+	for _, item := range vector["cases"].([]any) {
+		c := item.(map[string]any)
+		data := map[string]any{}
+		for key, value := range vector["data"].(map[string]any) {
+			data[key] = value
+		}
+		for key, value := range c["data"].(map[string]any) {
+			data[key] = value
+		}
+		parityExpectErrors(t, c["name"].(string), parityWavePayCase(t, data).Validate(), c["errors"])
+	}
+}
+
+func parityWavePayGateway(t *testing.T, config map[string]any, doer myanmarpayments.HTTPDoer) *wavepay.Gateway {
+	t.Helper()
+	gateway, err := wavepay.New(wavepay.Config{
+		MerchantID: config["merchant_id"].(string), SecretKey: config["secret_key"].(string),
+		MerchantName: config["merchant_name"].(string), TimeToLiveSeconds: parityInt(t, config["time_to_live_in_seconds"]),
+		BaseURL: config["base_url"].(string), BaseRedirectURL: config["base_redirect_url"].(string),
+	}, doer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return gateway
+}
+
+func TestParityWavePayExactAmount(t *testing.T) {
+	vector := testutil.Fixture(t, "parity/vectors.json")["wave_pay_exact_amount"].(map[string]any)
+	doer := &queueDoer{responses: []queuedResponse{{200, `{"message":"success","transaction_id":"T1"}`}}}
+	gateway := parityWavePayGateway(t, vector["config"].(map[string]any), doer)
+	if _, err := gateway.Initiate(context.Background(), parityWavePayCase(t, vector["data"].(map[string]any))); err != nil {
+		t.Fatal(err)
+	}
+
+	expected := vector["expected"].(map[string]any)
+	var sent map[string]any
+	if err := json.Unmarshal(doer.last(), &sent); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(doer.last()), `"amount":`+expected["amount_json"].(string)+`,`) {
+		t.Errorf("body %s, want amount %s", doer.last(), expected["amount_json"])
+	}
+	if sent["items"] != expected["items"] || sent["hash"] != expected["hash"] {
+		t.Errorf("items %v hash %v, want %v", sent["items"], sent["hash"], expected)
+	}
+}
+
+func TestParityWavePayErrors(t *testing.T) {
+	vectors := testutil.Fixture(t, "parity/vectors.json")
+	config := vectors["wave_pay_request"].(map[string]any)["config"].(map[string]any)
+	data := vectors["wave_pay_limits"].(map[string]any)["data"].(map[string]any)
+	for _, item := range vectors["wave_pay_errors"].(map[string]any)["cases"].([]any) {
+		c := item.(map[string]any)
+		status := parityInt(t, c["status"])
+		gateway := parityWavePayGateway(t, config, &queueDoer{responses: []queuedResponse{{status, c["body"].(string)}}})
+		_, err := gateway.Initiate(context.Background(), parityWavePayData(data))
+		parityAPIError(t, c["body"].(string), err, map[string]any{
+			"message":         fmt.Sprintf("Wave Pay payment request failed with HTTP %d: %s", status, c["gateway_message"]),
+			"gateway_code":    c["gateway_code"],
+			"gateway_message": c["gateway_message"],
+		})
+	}
+}
+
+func TestParityAyaPayServices(t *testing.T) {
+	vectors := testutil.Fixture(t, "parity/vectors.json")
+	for _, item := range vectors["aya_pay_services"].(map[string]any)["cases"].([]any) {
+		c := item.(map[string]any)
+		status := http.StatusOK
+		if value, ok := c["status"]; ok {
+			status = parityInt(t, value)
+		}
+		gateway, err := ayapay.New(ayapay.ConfigFromEnv(parityEnv(vectors, "", nil)), &queueDoer{responses: []queuedResponse{{status, c["body"].(string)}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		name := c["name"].(string)
+		services, err := gateway.Services(context.Background())
+		if want, ok := c["error"].(map[string]any); ok {
+			parityAPIError(t, name, err, want)
+			continue
+		}
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		got := make([]map[string]any, len(services))
+		for i, service := range services {
+			methods := []any{}
+			for _, method := range service.Methods {
+				methods = append(methods, string(method))
+			}
+			unknown := []any{}
+			for _, method := range service.UnknownMethods {
+				unknown = append(unknown, method)
+			}
+			got[i] = map[string]any{"name": service.Name, "key": service.Key, "image_url": service.ImageURL, "methods": methods, "unknown_methods": unknown}
+		}
+		want := make([]map[string]any, 0)
+		for _, entry := range c["services"].([]any) {
+			service := entry.(map[string]any)
+			if service["image_url"] == nil {
+				service["image_url"] = "" // A missing image is the empty string in Go.
+			}
+			want = append(want, service)
+		}
+		if fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Errorf("%s: services\n got %v\nwant %v", name, got, want)
+		}
+	}
+}
+
+func TestParityYomaMmqrResponses(t *testing.T) {
+	vectors := testutil.Fixture(t, "parity/vectors.json")
+	for _, item := range vectors["yoma_mmqr_responses"].(map[string]any)["cases"].([]any) {
+		c := item.(map[string]any)
+		doer := &queueDoer{}
+		for _, entry := range c["responses"].([]any) {
+			response := entry.(map[string]any)
+			doer.responses = append(doer.responses, queuedResponse{parityInt(t, response["status"]), response["body"].(string)})
+		}
+		gateway, err := yomammqr.New(yomammqr.ConfigFromEnv(parityEnv(vectors, "", nil)), doer, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		name, argument := c["name"].(string), c["argument"].(string)
+		var got map[string]any
+		if c["call"] == "status" {
+			var result *myanmarpayments.PaymentStatusResult
+			if result, err = gateway.Status(context.Background(), argument); err == nil {
+				got = map[string]any{"status": string(result.Status), "gateway_status": result.GatewayStatus, "gateway_reference": result.GatewayReference}
+			}
+		} else {
+			var payment *myanmarpayments.QrPayment
+			if payment, err = gateway.RenewQR(context.Background(), argument); err == nil {
+				got = map[string]any{"qr_image": payment.QRImage, "reference": payment.Reference}
+			}
+		}
+		if want, ok := c["error"].(map[string]any); ok {
+			parityAPIError(t, name, err, want)
+			continue
+		}
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if fmt.Sprint(got) != fmt.Sprint(c["result"]) {
+			t.Errorf("%s: got %v, want %v", name, got, c["result"])
+		}
+	}
+}
+
+func TestParityKbzPayResponses(t *testing.T) {
+	vectors := testutil.Fixture(t, "parity/vectors.json")
+	for _, item := range vectors["kbz_pay_responses"].(map[string]any)["cases"].([]any) {
+		c := item.(map[string]any)
+		gateway, err := kbzpay.New(kbzpay.ConfigFromEnv(parityEnv(vectors, "", nil)), &queueDoer{responses: []queuedResponse{{200, c["body"].(string)}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		name := c["name"].(string)
+		var got map[string]any
+		if c["call"] == "status" {
+			var result *myanmarpayments.PaymentStatusResult
+			if result, err = gateway.Status(context.Background(), "ORDER_1"); err == nil {
+				got = map[string]any{
+					"order_id": result.OrderID, "status": string(result.Status), "gateway_status": result.GatewayStatus,
+					"gateway_reference": result.GatewayReference, "amount": result.Amount,
+				}
+			}
+		} else {
+			var payment *myanmarpayments.QrPayment
+			if payment, err = gateway.QR(context.Background(), kbzpay.PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb"}); err == nil {
+				got = map[string]any{"qr_string": payment.QRString, "reference": payment.Reference}
+			}
+		}
+		if want, ok := c["error"].(map[string]any); ok {
+			parityAPIError(t, name, err, want)
+			continue
+		}
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		want := map[string]any{}
+		for key, value := range c["result"].(map[string]any) {
+			if value == nil {
+				value = "" // A missing value is the empty string in Go.
+			}
+			want[key] = value
+		}
+		if fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Errorf("%s: got %v, want %v", name, got, want)
 		}
 	}
 }

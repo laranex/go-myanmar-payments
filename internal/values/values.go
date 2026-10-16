@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"net/url"
 	"strconv"
 	"strings"
 )
@@ -63,9 +64,74 @@ func Get(m map[string]any, key string) string {
 	return s
 }
 
-// Trimmed returns m[key] as a string with surrounding whitespace removed.
+// Trimmed returns m[key] as a string with surrounding ASCII whitespace and NUL removed.
 func Trimmed(m map[string]any, key string) string {
-	return strings.TrimSpace(Get(m, key))
+	return TrimASCII(Get(m, key))
+}
+
+// ASCIISpace is the set PHP's trim() removes: space, tab, line feed, carriage return, NUL and
+// vertical tab. Every Laranex SDK trims with it, so a no-break space or a byte order mark is a
+// character, not whitespace.
+const ASCIISpace = " \t\n\r\x00\x0b"
+
+// TrimASCII removes ASCIISpace from both ends of s.
+func TrimASCII(s string) string { return strings.Trim(s, ASCIISpace) }
+
+// IsBlank reports whether s holds nothing but ASCIISpace.
+func IsBlank(s string) bool { return TrimASCII(s) == "" }
+
+// DecodeForm decodes a urlencoded body or query string like PHP's Form::decode: pairs are split
+// on "&" (empty ones skipped) and at their first "=", "+" is a space, a valid %XX escape is
+// decoded and any other "%" is kept as it is. ";" is not a separator. Names are kept exactly as
+// sent and values are listed in order, so the first value of a repeated name comes first.
+func DecodeForm(text string) url.Values {
+	form := url.Values{}
+	for _, pair := range strings.Split(text, "&") {
+		if pair == "" {
+			continue
+		}
+		name, value, _ := strings.Cut(pair, "=")
+		name = unescape(name)
+		form[name] = append(form[name], unescape(value))
+	}
+	return form
+}
+
+// unescape decodes like PHP's urldecode: "+" is a space, %XX is the byte it names, and a "%"
+// without two hex digits after it stays as it is.
+func unescape(text string) string {
+	if !strings.ContainsAny(text, "+%") {
+		return text
+	}
+	var out strings.Builder
+	out.Grow(len(text))
+	for i := 0; i < len(text); i++ {
+		switch char := text[i]; {
+		case char == '+':
+			out.WriteByte(' ')
+		case char == '%' && i+2 < len(text) && isHex(text[i+1]) && isHex(text[i+2]):
+			out.WriteByte(fromHex(text[i+1])<<4 | fromHex(text[i+2]))
+			i += 2
+		default:
+			out.WriteByte(char)
+		}
+	}
+	return out.String()
+}
+
+func isHex(c byte) bool {
+	return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F'
+}
+
+func fromHex(c byte) byte {
+	switch {
+	case c >= 'a':
+		return c - 'a' + 10
+	case c >= 'A':
+		return c - 'A' + 10
+	default:
+		return c - '0'
+	}
 }
 
 // Map returns m[key] as a map, or nil.

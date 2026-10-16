@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -143,11 +144,38 @@ func TestFormPaymentHTMLEscapesOnlyTheFiveHTMLCharacters(t *testing.T) {
 	}
 }
 
-func TestMalformedFormPairIsSkippedNotTheWholeBody(t *testing.T) {
-	request := NewCallbackRequest([]byte("decision=ACCEPT&bad=%zz&amount=10.50"), nil, nil)
+func TestFormBodiesAreDecodedLikeTheOtherSDKs(t *testing.T) {
+	request := NewCallbackRequest([]byte("decision=ACCEPT&bad=%zz&&semi=1;b=2&a+b=x%2By&a+b=second&flag&amount=10.50"), nil, nil)
 	body := request.ParsedBody()
-	if body["decision"] != "ACCEPT" || body["amount"] != "10.50" {
-		t.Fatalf("unexpected body %v", body)
+	want := map[string]any{"decision": "ACCEPT", "bad": "%zz", "semi": "1;b=2", "a b": "x+y", "flag": "", "amount": "10.50"}
+	if fmt.Sprint(body) != fmt.Sprint(want) {
+		t.Fatalf("body %v, want %v", body, want)
+	}
+}
+
+func TestOnlyASCIIWhitespaceAroundTheBodyIsTrimmed(t *testing.T) {
+	if got := NewCallbackRequest([]byte(" \t\n{\"a\":\"b\"}\r\x00\x0b"), nil, nil).ParsedBody(); got["a"] != "b" {
+		t.Fatalf("body %v, want the JSON object", got)
+	}
+	if got := NewCallbackRequest([]byte("\ufeff{\"a\":\"b\"}"), nil, nil).ParsedBody(); got["a"] == "b" {
+		t.Fatalf("a byte order mark must not be trimmed, got %v", got)
+	}
+}
+
+func TestQueryFromHTTPIsDecodedLikeAForm(t *testing.T) {
+	request, err := NewCallbackRequestFromHTTP(&http.Request{Method: http.MethodGet, URL: &url.URL{Path: "/cb", RawQuery: "a=%zz&b=1;c=2&a=second"}, Header: http.Header{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := request.Input(); got["a"] != "%zz" || got["b"] != "1;c=2" {
+		t.Fatalf("query %v", got)
+	}
+}
+
+func TestRepeatedHeadersAreJoined(t *testing.T) {
+	request := NewCallbackRequest(nil, http.Header{"X-Webhook-Secret": {"a", "b"}}, nil)
+	if got := request.HeaderValue("x-webhook-secret"); got != "a, b" {
+		t.Fatalf("HeaderValue = %q, want %q", got, "a, b")
 	}
 }
 

@@ -298,9 +298,10 @@ func (g *Gateway) tokenCacheKey() string {
 	return "myanmar-payments.yoma-mmqr.token." + hex.EncodeToString(sum[:])
 }
 
-// leadingInt reads the integer digits at the start of text, e.g. 28800 for "28800.0"; 0 when
-// there are none or they overflow.
+// leadingInt reads the integer digits at the start of text after any leading whitespace, e.g.
+// 28800 for "28800.0" or " 28800"; 0 when there are none or they overflow.
 func leadingInt(text string) int {
+	text = strings.TrimLeft(text, " \t\n\r\v\f")
 	end := 0
 	for end < len(text) && text[end] >= '0' && text[end] <= '9' {
 		end++
@@ -319,7 +320,7 @@ func apiError(endpoint string, status int, body map[string]any, errorCode string
 	}
 	text := fmt.Sprintf("Yoma MMQR %s failed with HTTP %d.", endpoint, status)
 	if errorCode != "" {
-		text = strings.TrimRight(fmt.Sprintf("Yoma MMQR %s failed: [%s] %s", endpoint, errorCode, message), " ")
+		text = strings.TrimRight(fmt.Sprintf("Yoma MMQR %s failed: [%s] %s", endpoint, errorCode, message), values.ASCIISpace)
 	}
 	return &myanmarpayments.APIError{Message: text, GatewayCode: errorCode, GatewayMessage: message, HTTPStatus: status, Raw: body}
 }

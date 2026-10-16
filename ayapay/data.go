@@ -43,7 +43,8 @@ type PaymentData struct {
 }
 
 // Validate checks the order against AYA's documented rules. OrderID, Description and UserRefs
-// must not contain ":", which separates the values AYA signs.
+// must not contain ":", which separates the values AYA signs; a colon in any user ref is
+// reported once, under userRefs.
 func (d PaymentData) Validate() error {
 	v := validate.New().
 		Required("orderId", d.OrderID).
@@ -55,11 +56,11 @@ func (d PaymentData) Validate() error {
 		When(len(d.UserRefs) > 5, "userRefs", "The userRefs field must not have more than 5 items.").
 		When(strings.Contains(d.OrderID, ":"), "orderId", noColon("orderId")).
 		When(strings.Contains(d.Description, ":"), "description", noColon("description"))
-	for i, ref := range d.UserRefs {
-		field := fmt.Sprintf("userRefs.%d", i)
-		v.When(strings.Contains(ref, ":"), field, noColon(field))
+	hasColon := false
+	for _, ref := range d.UserRefs {
+		hasColon = hasColon || strings.Contains(ref, ":")
 	}
-	return v.Err()
+	return v.When(hasColon, "userRefs", noColon("userRefs")).Err()
 }
 
 func noColon(field string) string {

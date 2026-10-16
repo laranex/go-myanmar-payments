@@ -1,6 +1,6 @@
 package myanmarpayments
 
-import "strings"
+import "github.com/laranex/go-myanmar-payments/v4/internal/values"
 
 // PaymentStatus is a gateway-independent payment status. Every gateway's own status
 // values are mapped onto these.
@@ -32,10 +32,10 @@ func (s PaymentStatus) IsFinal() bool {
 	return s != StatusPending && s != StatusUnknown
 }
 
-// ResolveStatus maps a gateway status onto a PaymentStatus, trimming whitespace.
+// ResolveStatus maps a gateway status onto a PaymentStatus, trimming ASCII whitespace and NUL.
 // Statuses missing from the map resolve to StatusUnknown.
 func ResolveStatus(statuses map[string]PaymentStatus, gatewayStatus string) PaymentStatus {
-	if status, ok := statuses[strings.TrimSpace(gatewayStatus)]; ok {
+	if status, ok := statuses[values.TrimASCII(gatewayStatus)]; ok {
 		return status
 	}
 

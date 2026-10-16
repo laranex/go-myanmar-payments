@@ -67,7 +67,10 @@ func New(config Config, client myanmarpayments.HTTPDoer) (*Gateway, error) {
 // Config returns the configuration in use.
 func (g *Gateway) Config() Config { return g.config }
 
-// Services lists the payment channels enabled for your merchant account.
+// Services lists the payment channels enabled for your merchant account. data and each
+// service's methods are read only when they are JSON lists; a service whose key is missing,
+// empty or not a scalar is skipped, and so are method entries that are not scalars. Scalars are
+// read as text (booleans as "true" and "false").
 func (g *Gateway) Services(ctx context.Context) ([]Service, error) {
 	timestamp := g.now().Unix()
 	ts := strconv.FormatInt(timestamp, 10)
@@ -93,7 +96,10 @@ func (g *Gateway) Services(ctx context.Context) ([]Service, error) {
 		}
 		methods, _ := entry["methods"].([]any)
 		for _, m := range methods {
-			name, _ := values.String(m)
+			name, ok := values.String(m)
+			if !ok {
+				continue
+			}
 			if method := Method(name); method.valid() {
 				service.Methods = append(service.Methods, method)
 			} else {
@@ -213,14 +219,22 @@ func toCallback(payload map[string]any) *myanmarpayments.PaymentCallback {
 	}
 }
 
-// verifiedPayload decodes a payload + checkSum pair and returns the payload if the checksum matches.
+// verifiedPayload decodes a payload + checkSum pair and returns the payload if the checksum
+// matches and the signed values are well formed. Undecodable base64 or JSON, a nested signed
+// value, a payload or checkSum that is not a string and a wrong checksum fail with "AYA Pay
+// {context} checksum verification failed."; checks after the checksum matched fail with "AYA Pay
+// {context} payload is malformed.".
 func (g *Gateway) verifiedPayload(input map[string]any, context string) (map[string]any, error) {
 	// A "+" in the base64 payload arrives as a space when the query string is not encoded;
 	// base64 never contains spaces, so map them back. The checksum is still verified.
-	encoded, checkSum := strings.ReplaceAll(values.Get(input, "payload"), " ", "+"), values.Get(input, "checkSum")
+	encoded, encodedOK := input["payload"].(string)
+	checkSum, checkSumOK := input["checkSum"].(string)
 	fail := &myanmarpayments.SignatureVerificationError{Message: fmt.Sprintf("AYA Pay %s checksum verification failed.", context), Raw: input}
+	if !encodedOK || !checkSumOK {
+		return nil, fail
+	}
 
-	raw, ok := decodeBase64(encoded)
+	raw, ok := decodeBase64(strings.ReplaceAll(encoded, " ", "+"))
 	if !ok || !utf8.Valid(raw) {
 		return nil, fail
 	}
@@ -229,9 +243,6 @@ func (g *Gateway) verifiedPayload(input map[string]any, context string) (map[str
 		return nil, fail
 	}
 
-	// The checksum joins the values with ":" and skips absent fields, so a value holding ":"
-	// could be re-split into other fields (e.g. the "00" seconds of dateTime read as statusCode).
-	// Only dateTime may hold ":", and only in AYA's fixed "YYYY-MM-DD hh:mm:ss" format.
 	var parts []string
 	signed := map[string]string{}
 	for _, field := range payloadFields {
@@ -250,13 +261,6 @@ func (g *Gateway) verifiedPayload(input map[string]any, context string) (map[str
 			return nil, fail
 		}
 		str, _ := values.String(value)
-		if field == "dateTime" {
-			if str != "" && !dateTimePattern.MatchString(str) {
-				return nil, fail
-			}
-		} else if strings.Contains(str, ":") {
-			return nil, fail
-		}
 		signed[field] = str
 		parts = append(parts, str)
 	}
@@ -265,11 +269,22 @@ func (g *Gateway) verifiedPayload(input map[string]any, context string) (map[str
 		return nil, fail
 	}
 
-	// A result is only trusted when it names the order, the transaction, an exact MMK amount
-	// and a two-digit status.
-	if signed["merchOrderId"] == "" || signed["tranId"] == "" || signed["currencyCode"] != currencyMMK ||
-		!amountPattern.MatchString(signed["amount"]) || !statusCodePattern.MatchString(signed["statusCode"]) {
-		return nil, fail
+	// The checksum joins the values with ":" and skips absent fields, so a value holding ":"
+	// could be re-split into other fields (e.g. the "00" seconds of dateTime read as statusCode).
+	// Only dateTime may hold ":", and only in AYA's fixed "YYYY-MM-DD hh:mm:ss" format. A result
+	// is only trusted when it names the order, the transaction, an exact MMK amount and a
+	// two-digit status.
+	malformed := signed["merchOrderId"] == "" || signed["tranId"] == "" || signed["currencyCode"] != currencyMMK ||
+		!amountPattern.MatchString(signed["amount"]) || !statusCodePattern.MatchString(signed["statusCode"])
+	for field, value := range signed {
+		if field == "dateTime" {
+			malformed = malformed || (value != "" && !dateTimePattern.MatchString(value))
+		} else {
+			malformed = malformed || strings.Contains(value, ":")
+		}
+	}
+	if malformed {
+		return nil, &myanmarpayments.SignatureVerificationError{Message: fmt.Sprintf("AYA Pay %s payload is malformed.", context), Raw: input}
 	}
 	return payload, nil
 }
@@ -308,7 +323,7 @@ func (g *Gateway) post(ctx context.Context, endpoint string, data map[string]any
 		message := values.Get(body, "message")
 		text := fmt.Sprintf("AYA Pay %s failed with HTTP %d.", endpoint, response.Status)
 		if status != "" {
-			text = strings.TrimRight(fmt.Sprintf("AYA Pay %s failed: [%s] %s", endpoint, status, message), " ")
+			text = strings.TrimRight(fmt.Sprintf("AYA Pay %s failed: [%s] %s", endpoint, status, message), values.ASCIISpace)
 		}
 		return nil, &myanmarpayments.APIError{Message: text, GatewayCode: status, GatewayMessage: message, HTTPStatus: response.Status, Raw: body}
 	}

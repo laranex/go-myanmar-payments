@@ -22,10 +22,14 @@ type Client struct {
 }
 
 // New returns a Client using doer, or an *http.Client with a timeout of timeoutSeconds when doer
-// is nil.
+// is nil. The default client never follows redirects: a 3xx response is returned as it is, so
+// the gateway reports it like any other non-2xx answer.
 func New(doer myanmarpayments.HTTPDoer, timeoutSeconds int) *Client {
 	if doer == nil {
-		doer = &http.Client{Timeout: time.Duration(timeoutSeconds) * time.Second}
+		doer = &http.Client{
+			Timeout:       time.Duration(timeoutSeconds) * time.Second,
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		}
 	}
 	return &Client{Doer: doer}
 }

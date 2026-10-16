@@ -182,9 +182,13 @@ func (g *Gateway) Initiate(ctx context.Context, data *PaymentData) (*myanmarpaym
 
 // HandleCallback verifies Wave's callback. Only PAYMENT_CONFIRMED means the customer paid.
 // OrderID falls back to merchantReferenceId when orderId is missing, null or empty, as a
-// safeguard: earlier Wave documents marked orderId optional. A callback whose amount is not a
-// non-negative decimal, that has neither id, or whose orderId or merchantReferenceId holds
-// anything but letters, numbers, "_" and "-", fails verification too.
+// safeguard: earlier Wave documents marked orderId optional.
+//
+// A nested value in a hashed field, a hashValue that is not a string or a wrong hash fails with
+// "Wave Pay callback hash verification failed.". Wave's hash joins the values with no separator,
+// so after the hash matches the amount must be a non-negative decimal, at least one id must be
+// present and each id (when sent) may only hold letters, numbers, "_" and "-"; otherwise it fails
+// with "Wave Pay callback is malformed.".
 func (g *Gateway) HandleCallback(request *myanmarpayments.CallbackRequest) (*myanmarpayments.PaymentCallback, error) {
 	payload := request.ParsedBody()
 
@@ -200,12 +204,15 @@ func (g *Gateway) HandleCallback(request *myanmarpayments.CallbackRequest) (*mya
 		}
 		parts[i] = value
 	}
-	hashValue, _ := payload["hashValue"].(string)
-	orderID, referenceID := values.Get(payload, "orderId"), values.Get(payload, "merchantReferenceId")
-	if nested || !hmac.Equal([]byte(g.hash(parts)), []byte(strings.ToLower(hashValue))) ||
-		!amountPattern.MatchString(values.Get(payload, "amount")) || (orderID == "" && referenceID == "") ||
-		(orderID != "" && !idPattern.MatchString(orderID)) || (referenceID != "" && !idPattern.MatchString(referenceID)) {
+	hashValue, isString := payload["hashValue"].(string)
+	if nested || !isString || !hmac.Equal([]byte(g.hash(parts)), []byte(strings.ToLower(hashValue))) {
 		return nil, &myanmarpayments.SignatureVerificationError{Message: "Wave Pay callback hash verification failed.", Raw: payload}
+	}
+
+	orderID, referenceID := values.Get(payload, "orderId"), values.Get(payload, "merchantReferenceId")
+	if !amountPattern.MatchString(values.Get(payload, "amount")) || (orderID == "" && referenceID == "") ||
+		(orderID != "" && !idPattern.MatchString(orderID)) || (referenceID != "" && !idPattern.MatchString(referenceID)) {
+		return nil, &myanmarpayments.SignatureVerificationError{Message: "Wave Pay callback is malformed.", Raw: payload}
 	}
 
 	gatewayStatus := values.Trimmed(payload, "status")
@@ -230,6 +237,9 @@ func (g *Gateway) hash(parts []string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
+// errorMessage is Wave's errors object as "field: messages" pairs sorted by field and joined with
+// "; ", or message, or "unexpected response". Each entry is a list of messages (scalars joined
+// with " ", objects skipped) or a single scalar message.
 func errorMessage(body map[string]any) string {
 	if errs, ok := body["errors"].(map[string]any); ok {
 		fields := make([]string, 0, len(errs))
@@ -246,6 +256,8 @@ func errorMessage(body map[string]any) string {
 						texts = append(texts, text)
 					}
 				}
+			} else if text, ok := values.String(errs[field]); ok {
+				texts = append(texts, text)
 			}
 			messages = append(messages, field+": "+strings.Join(texts, " "))
 		}
