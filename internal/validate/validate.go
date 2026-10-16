@@ -115,7 +115,7 @@ func (v *Validator) URL(field, value string) *Validator {
 var (
 	negativeAmount = regexp.MustCompile(`^-[0-9]+$`)
 	hostLabel      = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$`)
-	portPattern    = regexp.MustCompile(`^[0-9]*$`)
+	portPattern    = regexp.MustCompile(`^[0-9]{1,5}$`)
 )
 
 // IsHTTPURL reports whether value is a URL the way PHP's FILTER_VALIDATE_URL with an http or
@@ -149,7 +149,7 @@ func IsHTTPURL(value string) bool {
 		authority = authority[at+1:]
 	}
 
-	host, port := authority, ""
+	host, port, hasPort := authority, "", false
 	if strings.HasPrefix(authority, "[") {
 		end := strings.Index(authority, "]")
 		if end < 0 {
@@ -159,23 +159,24 @@ func IsHTTPURL(value string) bool {
 		if port != "" && !strings.HasPrefix(port, ":") {
 			return false
 		}
+		hasPort = port != ""
 		port = strings.TrimPrefix(port, ":")
 		if ip := net.ParseIP(host[1 : len(host)-1]); ip == nil || !strings.Contains(host, ":") {
 			return false
 		}
 	} else {
 		if colon := strings.LastIndex(authority, ":"); colon >= 0 {
-			host, port = authority[:colon], authority[colon+1:]
+			host, port, hasPort = authority[:colon], authority[colon+1:], true
 		}
 		if !validHost(host) {
 			return false
 		}
 	}
 
-	if !portPattern.MatchString(port) {
+	if hasPort && !portPattern.MatchString(port) {
 		return false
 	}
-	if port != "" {
+	if hasPort {
 		number, err := strconv.Atoi(port)
 		if err != nil || number > 65535 {
 			return false
