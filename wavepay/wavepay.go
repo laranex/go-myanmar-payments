@@ -182,9 +182,9 @@ func (g *Gateway) Initiate(ctx context.Context, data *PaymentData) (*myanmarpaym
 
 // HandleCallback verifies Wave's callback. Only PAYMENT_CONFIRMED means the customer paid.
 // OrderID falls back to merchantReferenceId when orderId is missing, null or empty, as a
-// safeguard: earlier Wave documents marked orderId optional. A callback whose amount is not a non-negative decimal, that has
-// neither id, or whose orderId or merchantReferenceId holds anything but letters, numbers, "_"
-// and "-", fails verification too.
+// safeguard: earlier Wave documents marked orderId optional. A callback whose amount is not a
+// non-negative decimal, that has neither id, or whose orderId or merchantReferenceId holds
+// anything but letters, numbers, "_" and "-", fails verification too.
 func (g *Gateway) HandleCallback(request *myanmarpayments.CallbackRequest) (*myanmarpayments.PaymentCallback, error) {
 	payload := request.ParsedBody()
 

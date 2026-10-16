@@ -38,8 +38,8 @@ type PaymentData struct {
 	Amount myanmarpayments.Amount
 	// MerchantReferenceID is the unique id of this attempt, at most 100 characters: letters,
 	// numbers, underscores and dashes. Wave rejects a reused one.
-	// Initiate fills it with a random id when empty; store it, because Wave's callback may
-	// omit OrderID but always carries this.
+	// Initiate fills it with a random id when empty; store it: every callback carries it as
+	// merchantReferenceId.
 	MerchantReferenceID string
 	// MerchantName is the business name shown on Wave's page for this payment. Leave it empty to
 	// use Config.MerchantName; a name made only of whitespace is rejected.
