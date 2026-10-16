@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -16,7 +16,7 @@ import (
 	"github.com/laranex/go-myanmar-payments/v4/cybersource"
 	"github.com/laranex/go-myanmar-payments/v4/internal/testutil"
 	"github.com/laranex/go-myanmar-payments/v4/kbzpay"
-	"github.com/laranex/go-myanmar-payments/v4/wavemoney"
+	"github.com/laranex/go-myanmar-payments/v4/wavepay"
 	"github.com/laranex/go-myanmar-payments/v4/yomammqr"
 )
 
@@ -43,8 +43,8 @@ func parityGateways(t *testing.T, vectors map[string]any) map[string]callbackHan
 
 	kbz := kbzpay.ConfigFromEnv(getenv)
 	kbz.AppKey = secret("kbz_pay_app_key")
-	wave := wavemoney.ConfigFromEnv(getenv)
-	wave.SecretKey = secret("wave_money_secret_key")
+	wave := wavepay.ConfigFromEnv(getenv)
+	wave.SecretKey = secret("wave_pay_secret_key")
 	aya := ayapay.ConfigFromEnv(getenv)
 	aya.AppSecret = secret("aya_pay_app_secret")
 	yoma := yomammqr.ConfigFromEnv(getenv)
@@ -54,7 +54,7 @@ func parityGateways(t *testing.T, vectors map[string]any) map[string]callbackHan
 
 	return map[string]callbackHandler{
 		"kbz_pay":      must(kbzpay.New(kbz, nil)),
-		"wave_money":   must(wavemoney.New(wave, nil)),
+		"wave_pay":     must(wavepay.New(wave, nil)),
 		"aya_pay":      must(ayapay.New(aya, nil)),
 		"yoma_mmqr":    must(yomammqr.New(yoma, nil, nil)),
 		"cyber_source": must(cybersource.New(cyber)),
@@ -157,8 +157,8 @@ func parityConfigGateway(gateway string, vars map[string]string) (map[string]str
 		c := g.Config()
 		return map[string]string{"api_url": c.ResolvedAPIURL(), "pwa_url": c.ResolvedPWAURL()},
 			map[string]int{"timeout_in_seconds": c.TimeoutSeconds}, nil
-	case "wave_money":
-		g, err := wavemoney.New(wavemoney.ConfigFromEnv(getenv), nil)
+	case "wave_pay":
+		g, err := wavepay.New(wavepay.ConfigFromEnv(getenv), nil)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -263,7 +263,7 @@ func TestParityDefaultTimeout(t *testing.T) {
 		} else {
 			delete(vars, variable)
 		}
-		for _, gateway := range []string{"kbz_pay", "wave_money", "aya_pay", "yoma_mmqr"} {
+		for _, gateway := range []string{"kbz_pay", "wave_pay", "aya_pay", "yoma_mmqr"} {
 			_, times, err := parityConfigGateway(gateway, vars)
 			if err != nil {
 				t.Fatalf("%s %s=%v: %v", gateway, variable, value, err)
@@ -341,9 +341,9 @@ func TestParityMessages(t *testing.T) {
 		return invalid.Errors["amount"]
 	}
 	decimal := myanmarpayments.MustParseAmount("1000.505")
-	wave := wavemoney.PaymentData{
+	wave := wavepay.PaymentData{
 		OrderID: "ORDER_1", CallbackURL: "https://shop.test/cb", ReturnURL: "https://shop.test/done", Description: "Order",
-		Items: []wavemoney.Item{{Name: "Shoes", Amount: myanmarpayments.Kyat(1000)}}, Amount: myanmarpayments.MustParseAmount("1000.5"),
+		Items: []wavepay.Item{{Name: "Shoes", Amount: myanmarpayments.Kyat(1000)}}, Amount: myanmarpayments.MustParseAmount("1000.5"),
 	}
 	aya := ayapay.PaymentData{OrderID: "ORDER_1", Amount: decimal, Channel: "kbz_pay", Method: ayapay.MethodQR}
 	kbz := kbzpay.PaymentData{OrderID: "ORDER_1", Amount: decimal, CallbackURL: "https://shop.test/cb"}
@@ -358,37 +358,154 @@ func TestParityMessages(t *testing.T) {
 	}
 }
 
-// formDoer is a fake HTTP client that records the posted form and answers with Wave's success
-// response.
-type formDoer struct{ form url.Values }
+// jsonDoer is a fake HTTP client that records the posted JSON request and answers with Wave's
+// response (a success one unless status and body are set).
+type jsonDoer struct {
+	status  int
+	body    string
+	request *http.Request
+	json    map[string]any
+}
 
-func (d *formDoer) Do(request *http.Request) (*http.Response, error) {
-	body, err := io.ReadAll(request.Body)
-	if err != nil {
+func (d *jsonDoer) Do(request *http.Request) (*http.Response, error) {
+	decoder := json.NewDecoder(request.Body)
+	decoder.UseNumber()
+	d.request, d.json = request, nil
+	if err := decoder.Decode(&d.json); err != nil {
 		return nil, err
 	}
-	if d.form, err = url.ParseQuery(string(body)); err != nil {
-		return nil, err
+	status, body := d.status, d.body
+	if status == 0 {
+		status, body = http.StatusOK, `{"message":"success","transaction_id":"T1"}`
 	}
 	return &http.Response{
-		StatusCode: http.StatusOK,
+		StatusCode: status,
 		Header:     http.Header{"Content-Type": {"application/json"}},
-		Body:       io.NopCloser(strings.NewReader(`{"message":"success","transaction_id":"T1"}`)),
+		Body:       io.NopCloser(strings.NewReader(body)),
 	}, nil
 }
 
-func TestParityWaveMoneyRequestOverrides(t *testing.T) {
-	vector := testutil.Fixture(t, "parity/vectors.json")["wave_money_request_overrides"].(map[string]any)
+// parityWavePayData builds a wavepay.PaymentData from a vector's data; a null or missing
+// additional field is the empty string in Go.
+func parityWavePayData(data map[string]any) *wavepay.PaymentData {
+	text := func(key string) string {
+		value, _ := data[key].(string)
+		return value
+	}
+	payment := &wavepay.PaymentData{
+		OrderID: text("order_id"), MerchantReferenceID: text("merchant_reference_id"),
+		CallbackURL: text("callback_url"), ReturnURL: text("return_url"), Description: text("description"),
+		AdditionalField3: text("additional_field_3"), AdditionalField4: text("additional_field_4"), AdditionalField5: text("additional_field_5"),
+	}
+	for _, entry := range data["items"].([]any) {
+		pair := entry.([]any)
+		payment.Items = append(payment.Items, wavepay.Item{Name: pair[0].(string), Amount: myanmarpayments.MustParseAmount(pair[1].(json.Number).String())})
+	}
+	return payment
+}
+
+func TestParityWavePayRequest(t *testing.T) {
+	vector := testutil.Fixture(t, "parity/vectors.json")["wave_pay_request"].(map[string]any)
 	config := vector["config"].(map[string]any)
 	ttl, err := strconv.Atoi(config["time_to_live_in_seconds"].(json.Number).String())
 	if err != nil {
 		t.Fatal(err)
 	}
-	doer := &formDoer{}
-	gateway, err := wavemoney.New(wavemoney.Config{
+	response := vector["response"].(map[string]any)
+	status, err := strconv.Atoi(response["status"].(json.Number).String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	responseBody, err := json.Marshal(response["body"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	doer := &jsonDoer{status: status, body: string(responseBody)}
+	gateway, err := wavepay.New(wavepay.Config{
 		MerchantID: config["merchant_id"].(string), SecretKey: config["secret_key"].(string),
 		MerchantName: config["merchant_name"].(string), TimeToLiveSeconds: ttl,
-		BaseURL: wavemoney.ProductionURL, BaseRedirectURL: wavemoney.ProductionURL,
+		BaseURL: config["base_url"].(string), BaseRedirectURL: config["base_redirect_url"].(string),
+	}, doer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := vector["expected"].(map[string]any)
+
+	for _, item := range vector["cases"].([]any) {
+		c := item.(map[string]any)
+		name := c["name"].(string)
+		payment, err := gateway.Initiate(context.Background(), parityWavePayData(c["data"].(map[string]any)))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if doer.request.Method != expected["method"] || doer.request.URL.String() != expected["url"] {
+			t.Errorf("%s: request %s %s", name, doer.request.Method, doer.request.URL)
+		}
+		for header, want := range expected["headers"].(map[string]any) {
+			if got := doer.request.Header.Get(header); got != want {
+				t.Errorf("%s: header %s = %q, want %q", name, header, got, want)
+			}
+		}
+		if got, want := fmt.Sprint(doer.json), fmt.Sprint(c["expected_body"]); got != want {
+			t.Errorf("%s: body\n got %s\nwant %s", name, got, want)
+		}
+		if payment.URL != expected["redirect_url"] || payment.GatewayReference != expected["gateway_reference"] {
+			t.Errorf("%s: payment %+v", name, payment)
+		}
+	}
+}
+
+func TestParityWavePayLimits(t *testing.T) {
+	vector := testutil.Fixture(t, "parity/vectors.json")["wave_pay_limits"].(map[string]any)
+	data := vector["data"].(map[string]any)
+	set := map[string]func(*wavepay.PaymentData, string){
+		"orderId":             func(d *wavepay.PaymentData, v string) { d.OrderID = v },
+		"merchantReferenceId": func(d *wavepay.PaymentData, v string) { d.MerchantReferenceID = v },
+		"callbackUrl":         func(d *wavepay.PaymentData, v string) { d.CallbackURL = v },
+		"returnUrl":           func(d *wavepay.PaymentData, v string) { d.ReturnURL = v },
+		"description":         func(d *wavepay.PaymentData, v string) { d.Description = v },
+		"additionalField3":    func(d *wavepay.PaymentData, v string) { d.AdditionalField3 = v },
+		"additionalField4":    func(d *wavepay.PaymentData, v string) { d.AdditionalField4 = v },
+		"additionalField5":    func(d *wavepay.PaymentData, v string) { d.AdditionalField5 = v },
+	}
+	build := func(c map[string]any) *wavepay.PaymentData {
+		setter, ok := set[c["field"].(string)]
+		if !ok {
+			t.Fatalf("unknown field %v", c["field"])
+		}
+		payment := parityWavePayData(data)
+		setter(payment, c["value"].(string))
+		return payment
+	}
+
+	for _, item := range vector["valid"].([]any) {
+		c := item.(map[string]any)
+		if err := build(c).Validate(); err != nil {
+			t.Errorf("%s: unexpected error %v", c["field"], err)
+		}
+	}
+	for _, item := range vector["invalid"].([]any) {
+		c := item.(map[string]any)
+		var invalid *myanmarpayments.InvalidPaymentDataError
+		err := build(c).Validate()
+		if !errors.As(err, &invalid) || len(invalid.Errors) != 1 || invalid.Errors[c["field"].(string)] != c["error"] {
+			t.Errorf("%s: got %v, want %q", c["field"], err, c["error"])
+		}
+	}
+}
+
+func TestParityWavePayRequestOverrides(t *testing.T) {
+	vector := testutil.Fixture(t, "parity/vectors.json")["wave_pay_request_overrides"].(map[string]any)
+	config := vector["config"].(map[string]any)
+	ttl, err := strconv.Atoi(config["time_to_live_in_seconds"].(json.Number).String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	doer := &jsonDoer{}
+	gateway, err := wavepay.New(wavepay.Config{
+		MerchantID: config["merchant_id"].(string), SecretKey: config["secret_key"].(string),
+		MerchantName: config["merchant_name"].(string), TimeToLiveSeconds: ttl,
+		BaseURL: wavepay.ProductionURL, BaseRedirectURL: wavepay.ProductionURL,
 	}, doer)
 	if err != nil {
 		t.Fatal(err)
@@ -396,15 +513,15 @@ func TestParityWaveMoneyRequestOverrides(t *testing.T) {
 
 	// A null merchant_name means "not set", the empty string in Go; a null time_to_live_in_seconds
 	// is a nil TimeToLiveSeconds, so an explicit 0 is still rejected like in the other SDKs.
-	build := func(item map[string]any) *wavemoney.PaymentData {
+	build := func(item map[string]any) *wavepay.PaymentData {
 		data := vector["data"].(map[string]any)
-		payment := &wavemoney.PaymentData{
+		payment := &wavepay.PaymentData{
 			OrderID: data["order_id"].(string), MerchantReferenceID: data["merchant_reference_id"].(string),
 			CallbackURL: data["callback_url"].(string), ReturnURL: data["return_url"].(string), Description: data["description"].(string),
 		}
 		for _, entry := range data["items"].([]any) {
 			pair := entry.([]any)
-			payment.Items = append(payment.Items, wavemoney.Item{Name: pair[0].(string), Amount: myanmarpayments.MustParseAmount(pair[1].(json.Number).String())})
+			payment.Items = append(payment.Items, wavepay.Item{Name: pair[0].(string), Amount: myanmarpayments.MustParseAmount(pair[1].(json.Number).String())})
 		}
 		if name, ok := item["merchant_name"].(string); ok {
 			payment.MerchantName = name
@@ -425,8 +542,8 @@ func TestParityWaveMoneyRequestOverrides(t *testing.T) {
 			t.Fatalf("%v: %v", vector, err)
 		}
 		for field, want := range vector["expected"].(map[string]any) {
-			if got := doer.form.Get(field); got != want {
-				t.Errorf("%v: %s = %q, want %q", vector, field, got, want)
+			if got := doer.json[field]; got != want {
+				t.Errorf("%v: %s = %v, want %v", vector, field, got, want)
 			}
 		}
 	}

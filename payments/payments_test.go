@@ -12,7 +12,7 @@ import (
 	"github.com/laranex/go-myanmar-payments/v4/ayapay"
 	"github.com/laranex/go-myanmar-payments/v4/cybersource"
 	"github.com/laranex/go-myanmar-payments/v4/kbzpay"
-	"github.com/laranex/go-myanmar-payments/v4/wavemoney"
+	"github.com/laranex/go-myanmar-payments/v4/wavepay"
 	"github.com/laranex/go-myanmar-payments/v4/yomammqr"
 )
 
@@ -22,9 +22,9 @@ func configured() Config {
 			AppID: "kp123", AppKey: "key", MerchantCode: "100001", APIURL: kbzpay.ProductionAPIURL, PWAURL: kbzpay.ProductionPWAURL,
 			TimeToLiveMinutes: 15, TimeoutSeconds: 30,
 		},
-		WaveMoney: &wavemoney.Config{
-			MerchantID: "merchant", SecretKey: "secret", MerchantName: "Shop", BaseURL: wavemoney.ProductionURL,
-			BaseRedirectURL: wavemoney.ProductionURL, TimeToLiveSeconds: 300, TimeoutSeconds: 30,
+		WavePay: &wavepay.Config{
+			MerchantID: "merchant", SecretKey: "secret", MerchantName: "Shop", BaseURL: wavepay.ProductionURL,
+			BaseRedirectURL: wavepay.ProductionURL, TimeToLiveSeconds: 300, TimeoutSeconds: 30,
 		},
 		AYAPay: &ayapay.Config{AppKey: "app-key", AppSecret: "secret", BaseURL: ayapay.ProductionURL, TimeoutSeconds: 30},
 		YomaMMQR: &yomammqr.Config{
@@ -46,9 +46,9 @@ func TestGatewaysAreBuiltOnceAndReused(t *testing.T) {
 	if kbz != again || kbz.Config().AppID != "kp123" {
 		t.Fatal("KBZPay is not reused")
 	}
-	wave, err := gateways.WaveMoney()
+	wave, err := gateways.WavePay()
 	if err != nil || wave.Config().MerchantName != "Shop" {
-		t.Fatalf("unexpected Wave Money %v", err)
+		t.Fatalf("unexpected Wave Pay %v", err)
 	}
 	aya, err := gateways.AYAPay()
 	if err != nil || aya.Config().AppKey != "app-key" {
@@ -68,7 +68,7 @@ func TestAMissingGatewayNamesItsFirstKey(t *testing.T) {
 	gateways := New(Config{}, Options{})
 	cases := map[string]func() error{
 		"kbz_pay/app_id":          func() error { _, err := gateways.KBZPay(); return err },
-		"wave_money/merchant_id":  func() error { _, err := gateways.WaveMoney(); return err },
+		"wave_pay/merchant_id":    func() error { _, err := gateways.WavePay(); return err },
 		"aya_pay/app_key":         func() error { _, err := gateways.AYAPay(); return err },
 		"yoma_mmqr/merchant_id":   func() error { _, err := gateways.YomaMMQR(); return err },
 		"cyber_source/profile_id": func() error { _, err := gateways.CyberSource(); return err },

@@ -14,7 +14,7 @@ var amountPattern = regexp.MustCompile(`^\d+(\.\d+)?$`)
 // Amount is an exact, non-negative money amount in a gateway's currency, kept as decimal text so
 // it is never rounded through a float. Build one with Kyat for whole amounts or ParseAmount for
 // decimal ones; each gateway's Validate then checks it against that gateway's documented rules
-// (for example, Wave Money, AYA and Yoma MMQR only accept whole kyat).
+// (for example, Wave Pay, AYA and Yoma MMQR only accept whole kyat).
 //
 // The zero value means "not provided". Amount is immutable and safe to copy.
 type Amount struct {

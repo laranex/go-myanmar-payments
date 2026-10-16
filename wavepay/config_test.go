@@ -1,4 +1,4 @@
-package wavemoney
+package wavepay
 
 import (
 	"errors"
@@ -18,9 +18,9 @@ func testConfig() Config {
 
 func TestConfigFromEnvReadsTheWaveVariables(t *testing.T) {
 	env := map[string]string{
-		"WAVE_MONEY_MERCHANT_ID": "merchant", "WAVE_MONEY_SECRET_KEY": "secret", "WAVE_MONEY_MERCHANT_NAME": "My Shop", "APP_NAME": "Ignored",
-		"WAVE_MONEY_TIME_TO_LIVE_IN_SECONDS": "600", "MYANMAR_PAYMENTS_HTTP_TIMEOUT": "20",
-		"WAVE_MONEY_BASE_URL": "https://wave.test:8107/", "WAVE_MONEY_BASE_REDIRECT_URL": "https://wave.test/",
+		"WAVE_PAY_MERCHANT_ID": "merchant", "WAVE_PAY_SECRET_KEY": "secret", "WAVE_PAY_MERCHANT_NAME": "My Shop", "APP_NAME": "Ignored",
+		"WAVE_PAY_TIME_TO_LIVE_IN_SECONDS": "600", "MYANMAR_PAYMENTS_HTTP_TIMEOUT": "20",
+		"WAVE_PAY_BASE_URL": "https://wave.test:8107/", "WAVE_PAY_BASE_REDIRECT_URL": "https://wave.test/",
 	}
 	config := ConfigFromEnv(func(key string) string { return env[key] })
 	if config.MerchantID != "merchant" || config.SecretKey != "secret" || config.MerchantName != "My Shop" || config.TimeToLiveSeconds != 600 || config.TimeoutSeconds != 20 {
@@ -55,8 +55,8 @@ func TestNewRequiresEverySettingExceptTheTimeout(t *testing.T) {
 		config := testConfig()
 		clear(&config)
 		var configErr *myanmarpayments.ConfigurationError
-		if _, err := New(config, nil); !errors.As(err, &configErr) || configErr.Gateway != "wave_money" || configErr.Key != key || configErr.Invalid ||
-			err.Error() != "myanmarpayments: The wave_money configuration is missing ["+key+"]." {
+		if _, err := New(config, nil); !errors.As(err, &configErr) || configErr.Gateway != "wave_pay" || configErr.Key != key || configErr.Invalid ||
+			err.Error() != "myanmarpayments: The wave_pay configuration is missing ["+key+"]." {
 			t.Fatalf("expected missing %s, got %v", key, err)
 		}
 	}

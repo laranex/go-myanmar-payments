@@ -15,7 +15,7 @@ import (
 	"github.com/laranex/go-myanmar-payments/v4/ayapay"
 	"github.com/laranex/go-myanmar-payments/v4/cybersource"
 	"github.com/laranex/go-myanmar-payments/v4/kbzpay"
-	"github.com/laranex/go-myanmar-payments/v4/wavemoney"
+	"github.com/laranex/go-myanmar-payments/v4/wavepay"
 	"github.com/laranex/go-myanmar-payments/v4/yomammqr"
 )
 
@@ -23,7 +23,7 @@ import (
 // makes that gateway's method return a *myanmarpayments.ConfigurationError.
 type Config struct {
 	KBZPay      *kbzpay.Config
-	WaveMoney   *wavemoney.Config
+	WavePay     *wavepay.Config
 	AYAPay      *ayapay.Config
 	YomaMMQR    *yomammqr.Config
 	CyberSource *cybersource.Config
@@ -46,7 +46,7 @@ type Gateways struct {
 	options Options
 
 	kbzPay      *kbzpay.Gateway
-	waveMoney   *wavemoney.Gateway
+	wavePay     *wavepay.Gateway
 	ayaPay      *ayapay.Gateway
 	yomaMMQR    *yomammqr.Gateway
 	cyberSource *cybersource.Gateway
@@ -58,16 +58,16 @@ func New(config Config, options Options) *Gateways {
 }
 
 // FromEnv returns Gateways that read every gateway's configuration from environment variables
-// (KBZ_PAY_*, WAVE_MONEY_*, AYA_PAY_*, YOMA_MMQR_*, CYBER_SOURCE_* and MYANMAR_PAYMENTS_HTTP_TIMEOUT) through getenv, e.g.
+// (KBZ_PAY_*, WAVE_PAY_*, AYA_PAY_*, YOMA_MMQR_*, CYBER_SOURCE_* and MYANMAR_PAYMENTS_HTTP_TIMEOUT) through getenv, e.g.
 // os.Getenv, when the gateway is first used.
 func FromEnv(getenv func(string) string, options Options) *Gateways {
 	return newGateways(func() Config {
 		kbz := kbzpay.ConfigFromEnv(getenv)
-		wave := wavemoney.ConfigFromEnv(getenv)
+		wave := wavepay.ConfigFromEnv(getenv)
 		aya := ayapay.ConfigFromEnv(getenv)
 		yoma := yomammqr.ConfigFromEnv(getenv)
 		cyber := cybersource.ConfigFromEnv(getenv)
-		return Config{KBZPay: &kbz, WaveMoney: &wave, AYAPay: &aya, YomaMMQR: &yoma, CyberSource: &cyber}
+		return Config{KBZPay: &kbz, WavePay: &wave, AYAPay: &aya, YomaMMQR: &yoma, CyberSource: &cyber}
 	}, options)
 }
 
@@ -84,10 +84,10 @@ func (g *Gateways) KBZPay() (*kbzpay.Gateway, error) {
 		func(c kbzpay.Config) (*kbzpay.Gateway, error) { return kbzpay.New(c, g.options.HTTPClient) })
 }
 
-// WaveMoney returns the Wave Money gateway, or a ConfigurationError when it is not configured.
-func (g *Gateways) WaveMoney() (*wavemoney.Gateway, error) {
-	return build(g, &g.waveMoney, func(c Config) *wavemoney.Config { return c.WaveMoney }, "wave_money", "merchant_id",
-		func(c wavemoney.Config) (*wavemoney.Gateway, error) { return wavemoney.New(c, g.options.HTTPClient) })
+// WavePay returns the Wave Pay gateway, or a ConfigurationError when it is not configured.
+func (g *Gateways) WavePay() (*wavepay.Gateway, error) {
+	return build(g, &g.wavePay, func(c Config) *wavepay.Config { return c.WavePay }, "wave_pay", "merchant_id",
+		func(c wavepay.Config) (*wavepay.Gateway, error) { return wavepay.New(c, g.options.HTTPClient) })
 }
 
 // AYAPay returns the AYA Payment Gateway, or a ConfigurationError when it is not configured.

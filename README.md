@@ -4,13 +4,13 @@
 [![Tests](https://github.com/laranex/go-myanmar-payments/actions/workflows/tests.yml/badge.svg)](https://github.com/laranex/go-myanmar-payments/actions/workflows/tests.yml)
 [![License](https://img.shields.io/github/license/laranex/go-myanmar-payments.svg?style=flat-square)](LICENSE.md)
 
-Go SDK for Myanmar payment gateways: KBZ Pay, Wave Money, AYA Pay, Yoma MMQR and CyberSource. Typed requests and results, exact amounts, standard library only. Built for humans and AI agents.
+Go SDK for Myanmar payment gateways: KBZ Pay, Wave Pay, AYA Pay, Yoma MMQR and CyberSource. Typed requests and results, exact amounts, standard library only. Built for humans and AI agents.
 
 Every Myanmar payment gateway signs its requests and callbacks its own way, reports its own status codes and has its own rules for amounts. Go Myanmar Payments handles all of that behind one typed API for `net/http` and every router built on it: build the payment data, start the payment, then verify the callback the gateway sends back.
 
 ## Why Go Myanmar Payments
 
-- **Five gateways, one pattern.** KBZ Pay (PWA, QR and in-app), Wave Money, AYA Pay, Yoma MMQR and CyberSource, each in its own package with the same three steps.
+- **Five gateways, one pattern.** KBZ Pay (PWA, QR and in-app), Wave Pay, AYA Pay, Yoma MMQR and CyberSource, each in its own package with the same three steps.
 - **One typed result per flow.** `RedirectPayment`, `FormPayment`, `QrPayment` or `AppPayment` holds exactly what the next step needs: a URL to redirect to, an auto-submitting form, a QR code or the signed order for the KBZ Pay mobile SDK. See [Payment Flows](https://laranex.vercel.app/go-myanmar-payments/payment-flows).
 - **Exact amounts, checked against each gateway's rules.** An `Amount` is kept as decimal text and never passes through a `float64`. Decimals, currency and limits follow each gateway's official documentation and are checked before any request is sent. See [Amounts](https://laranex.vercel.app/go-myanmar-payments/amounts).
 - **Verified callbacks.** `HandleCallback()` checks the gateway's signature without a network call, maps its status onto one `PaymentStatus` and gives you the acknowledgement the gateway expects. When a callback is late, ask KBZ Pay, AYA Pay or Yoma MMQR with `Status()`. See [Callbacks & Status](https://laranex.vercel.app/go-myanmar-payments/callbacks).
@@ -43,7 +43,7 @@ The full documentation lives at **[laranex.vercel.app/go-myanmar-payments](https
 - [Framework Integration](https://laranex.vercel.app/go-myanmar-payments/framework-integration): `net/http`, chi, Gin and Echo
 - [Testing](https://laranex.vercel.app/go-myanmar-payments/testing): faking gateway calls and replaying signed callbacks in your tests
 - [KBZ Pay](https://laranex.vercel.app/go-myanmar-payments/drivers/kbz-pay): PWA redirect, QR and in-app payments, status checks and callbacks
-- [Wave Money](https://laranex.vercel.app/go-myanmar-payments/drivers/wave-money): redirect payments with line items and verified callbacks
+- [Wave Pay](https://laranex.vercel.app/go-myanmar-payments/drivers/wave-pay): redirect payments with line items and verified callbacks
 - [AYA Pay](https://laranex.vercel.app/go-myanmar-payments/drivers/aya-pay): hosted checkout for AYA Pay, other wallets and cards, with status checks
 - [Yoma MMQR](https://laranex.vercel.app/go-myanmar-payments/drivers/yoma-mmqr): QR images, QR renewal, status checks and verified callbacks
 - [CyberSource](https://laranex.vercel.app/go-myanmar-payments/drivers/cyber-source): Secure Acceptance card payments through a signed hosted checkout form

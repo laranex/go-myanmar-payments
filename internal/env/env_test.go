@@ -60,15 +60,15 @@ func TestOptionalSecondsReportsOnlyInvalidValues(t *testing.T) {
 }
 
 func TestRequiredSecondsReportsMissingAndInvalidValues(t *testing.T) {
-	if err := RequiredSeconds("wave_money", "time_to_live_in_seconds", 300); err != nil {
+	if err := RequiredSeconds("wave_pay", "time_to_live_in_seconds", 300); err != nil {
 		t.Fatalf("RequiredSeconds(300) returned %v", err)
 	}
 
 	var configErr *myanmarpayments.ConfigurationError
-	if !errors.As(RequiredSeconds("wave_money", "time_to_live_in_seconds", 0), &configErr) || configErr.Invalid || configErr.Key != "time_to_live_in_seconds" {
+	if !errors.As(RequiredSeconds("wave_pay", "time_to_live_in_seconds", 0), &configErr) || configErr.Invalid || configErr.Key != "time_to_live_in_seconds" {
 		t.Fatalf("RequiredSeconds(0) = %+v, want a missing time_to_live_in_seconds", configErr)
 	}
-	if !errors.As(RequiredSeconds("wave_money", "time_to_live_in_seconds", -1), &configErr) || !configErr.Invalid {
+	if !errors.As(RequiredSeconds("wave_pay", "time_to_live_in_seconds", -1), &configErr) || !configErr.Invalid {
 		t.Fatalf("RequiredSeconds(-1) = %+v, want an invalid time_to_live_in_seconds", configErr)
 	}
 }
@@ -107,7 +107,7 @@ func TestRequireReportsTheFirstBlankKey(t *testing.T) {
 }
 
 func TestRequireIgnoresADanglingKey(t *testing.T) {
-	if err := Require("Wave Money", "merchant_id", "m1", "dangling"); err != nil {
+	if err := Require("Wave Pay", "merchant_id", "m1", "dangling"); err != nil {
 		t.Fatalf("Require with an odd number of arguments returned %v", err)
 	}
 }

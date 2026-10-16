@@ -1,6 +1,6 @@
-// Package wavemoney integrates Wave Money (WavePay payment gateway): redirect payments and
+// Package wavepay integrates Wave Pay (Pay with Wave API v1.3): redirect payments and
 // callbacks. Wave has no status API, so the callback is the only result.
-package wavemoney
+package wavepay
 
 import (
 	"bytes"
@@ -22,11 +22,14 @@ import (
 	"github.com/laranex/go-myanmar-payments/v4/internal/values"
 )
 
+// currency is the only currency Wave accepts.
+const currency = "MMK"
+
 var statuses = map[string]myanmarpayments.PaymentStatus{
 	"PAYMENT_CONFIRMED":               myanmarpayments.StatusSuccessful,
-	"INSUFFICIENT_BALANCE":            myanmarpayments.StatusPending,
-	"ACCOUNT_LOCKED":                  myanmarpayments.StatusFailed,
 	"BILL_COLLECTION_FAILED":          myanmarpayments.StatusFailed,
+	"INSUFFICIENT_BALANCE":            myanmarpayments.StatusFailed,
+	"ACCOUNT_LOCKED":                  myanmarpayments.StatusFailed,
 	"PAYMENT_REQUEST_CANCELLED":       myanmarpayments.StatusCanceled,
 	"TRANSACTION_TIMED_OUT":           myanmarpayments.StatusExpired,
 	"SCHEDULER_TRANSACTION_TIMED_OUT": myanmarpayments.StatusExpired,
@@ -46,7 +49,28 @@ var (
 
 const idDescription = "letters, numbers, underscores and dashes"
 
-// Gateway talks to Wave Money.
+// paymentRequest is the JSON body of a payment request (Pay with Wave API spec v1.3, section
+// 3.2.1): amount and time_to_live_in_seconds are JSON integers, items is a JSON string and the
+// additional fields are only sent when set.
+type paymentRequest struct {
+	MerchantID          string      `json:"merchant_id"`
+	OrderID             string      `json:"order_id"`
+	MerchantReferenceID string      `json:"merchant_reference_id"`
+	FrontendResultURL   string      `json:"frontend_result_url"`
+	BackendResultURL    string      `json:"backend_result_url"`
+	Amount              json.Number `json:"amount"`
+	TimeToLiveInSeconds int         `json:"time_to_live_in_seconds"`
+	PaymentDescription  string      `json:"payment_description"`
+	Currency            string      `json:"currency"`
+	Hash                string      `json:"hash"`
+	MerchantName        string      `json:"merchant_name"`
+	Items               string      `json:"items"`
+	AdditionalField3    string      `json:"additional_field_3,omitempty"`
+	AdditionalField4    string      `json:"additional_field_4,omitempty"`
+	AdditionalField5    string      `json:"additional_field_5,omitempty"`
+}
+
+// Gateway talks to Wave Pay.
 type Gateway struct {
 	config    Config
 	transport *transport.Client
@@ -69,8 +93,9 @@ func (g *Gateway) Config() Config { return g.config }
 // Once data passes validation it fills data.MerchantReferenceID with a random id when empty, so
 // store it afterwards. Invalid data is returned untouched. A non-empty data.MerchantName and a
 // non-nil data.TimeToLiveSeconds override the configured values for this payment only. The
-// payment is requested at Config.BaseURL's /payment and the customer is sent to
-// Config.BaseRedirectURL's /authenticate.
+// payment is a JSON post to Config.BaseURL's /payment (currency MMK; the additional fields are
+// sent only when set) and the customer is sent to Config.BaseRedirectURL's
+// /authenticate?transaction_id=....
 func (g *Gateway) Initiate(ctx context.Context, data *PaymentData) (*myanmarpayments.RedirectPayment, error) {
 	if err := data.Validate(); err != nil {
 		return nil, err
@@ -107,20 +132,25 @@ func (g *Gateway) Initiate(ctx context.Context, data *PaymentData) (*myanmarpaym
 	}
 	items := bytes.TrimRight(encoded.Bytes(), "\n")
 
-	form := url.Values{}
-	form.Set("time_to_live_in_seconds", strconv.Itoa(ttl))
-	form.Set("merchant_id", g.config.MerchantID)
-	form.Set("order_id", data.OrderID)
-	form.Set("merchant_reference_id", data.MerchantReferenceID)
-	form.Set("frontend_result_url", data.ReturnURL)
-	form.Set("backend_result_url", data.CallbackURL)
-	form.Set("amount", amount.String())
-	form.Set("payment_description", data.Description)
-	form.Set("merchant_name", merchantName)
-	form.Set("items", string(items))
-	form.Set("hash", g.hash([]string{strconv.Itoa(ttl), g.config.MerchantID, data.OrderID, amount.String(), data.CallbackURL, data.MerchantReferenceID}))
+	payload := paymentRequest{
+		MerchantID:          g.config.MerchantID,
+		OrderID:             data.OrderID,
+		MerchantReferenceID: data.MerchantReferenceID,
+		FrontendResultURL:   data.ReturnURL,
+		BackendResultURL:    data.CallbackURL,
+		Amount:              json.Number(amount.String()),
+		TimeToLiveInSeconds: ttl,
+		PaymentDescription:  data.Description,
+		Currency:            currency,
+		Hash:                g.hash([]string{strconv.Itoa(ttl), g.config.MerchantID, data.OrderID, amount.String(), data.CallbackURL, data.MerchantReferenceID}),
+		MerchantName:        merchantName,
+		Items:               string(items),
+		AdditionalField3:    data.AdditionalField3,
+		AdditionalField4:    data.AdditionalField4,
+		AdditionalField5:    data.AdditionalField5,
+	}
 
-	response, err := g.transport.PostForm(ctx, g.config.ResolvedBaseURL()+"/payment", form, nil)
+	response, err := g.transport.PostJSON(ctx, g.config.ResolvedBaseURL()+"/payment", payload, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +164,7 @@ func (g *Gateway) Initiate(ctx context.Context, data *PaymentData) (*myanmarpaym
 			code = "VALIDATION_ERROR"
 		}
 		return nil, &myanmarpayments.APIError{
-			Message:        fmt.Sprintf("Wave Money payment request failed with HTTP %d: %s", response.Status, message),
+			Message:        fmt.Sprintf("Wave Pay payment request failed with HTTP %d: %s", response.Status, message),
 			GatewayCode:    code,
 			GatewayMessage: message,
 			HTTPStatus:     response.Status,
@@ -151,8 +181,8 @@ func (g *Gateway) Initiate(ctx context.Context, data *PaymentData) (*myanmarpaym
 }
 
 // HandleCallback verifies Wave's callback. Only PAYMENT_CONFIRMED means the customer paid.
-// OrderID falls back to merchantReferenceId when orderId is missing, null or empty, because Wave
-// marks orderId as optional. A callback whose amount is not a non-negative decimal, that has
+// OrderID falls back to merchantReferenceId when orderId is missing, null or empty, as a
+// safeguard: earlier Wave documents marked orderId optional. A callback whose amount is not a non-negative decimal, that has
 // neither id, or whose orderId or merchantReferenceId holds anything but letters, numbers, "_"
 // and "-", fails verification too.
 func (g *Gateway) HandleCallback(request *myanmarpayments.CallbackRequest) (*myanmarpayments.PaymentCallback, error) {
@@ -175,7 +205,7 @@ func (g *Gateway) HandleCallback(request *myanmarpayments.CallbackRequest) (*mya
 	if nested || !hmac.Equal([]byte(g.hash(parts)), []byte(strings.ToLower(hashValue))) ||
 		!amountPattern.MatchString(values.Get(payload, "amount")) || (orderID == "" && referenceID == "") ||
 		(orderID != "" && !idPattern.MatchString(orderID)) || (referenceID != "" && !idPattern.MatchString(referenceID)) {
-		return nil, &myanmarpayments.SignatureVerificationError{Message: "Wave Money callback hash verification failed.", Raw: payload}
+		return nil, &myanmarpayments.SignatureVerificationError{Message: "Wave Pay callback hash verification failed.", Raw: payload}
 	}
 
 	gatewayStatus := values.Trimmed(payload, "status")

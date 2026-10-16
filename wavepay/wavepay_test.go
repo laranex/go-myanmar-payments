@@ -1,12 +1,14 @@
-package wavemoney
+package wavepay
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
-	"net/url"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -43,6 +45,18 @@ func hmacHex(message, secret string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
+// requestBody decodes a recorded JSON request body, keeping numbers as json.Number.
+func requestBody(t *testing.T, body []byte) map[string]any {
+	t.Helper()
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	var decoded map[string]any
+	if err := decoder.Decode(&decoded); err != nil {
+		t.Fatalf("request body is not JSON: %v (%s)", err, body)
+	}
+	return decoded
+}
+
 func signedCallback(t *testing.T, payload map[string]any, secret string) *myanmarpayments.CallbackRequest {
 	t.Helper()
 	parts := ""
@@ -61,7 +75,7 @@ func signedCallback(t *testing.T, payload map[string]any, secret string) *myanma
 	return request
 }
 
-func TestInitiatePostsAHashedFormAndRedirectsToAuthenticate(t *testing.T) {
+func TestInitiatePostsAHashedJSONRequestAndRedirectsToAuthenticate(t *testing.T) {
 	server := testutil.NewServer(t, testutil.Reply{Body: map[string]any{"message": "success", "transaction_id": "enc/123+abc"}})
 
 	payment, err := newGateway(t, server).Initiate(context.Background(), paymentData())
@@ -70,21 +84,83 @@ func TestInitiatePostsAHashedFormAndRedirectsToAuthenticate(t *testing.T) {
 	}
 
 	recorded := server.Last(t)
-	form, _ := url.ParseQuery(string(recorded.Body))
-	if recorded.Path != "/payment" || recorded.Header.Get("Content-Type") != "application/x-www-form-urlencoded" {
-		t.Fatalf("unexpected request %s %s", recorded.Path, recorded.Header.Get("Content-Type"))
+	if recorded.Method != "POST" || recorded.Path != "/payment" || recorded.Header.Get("Content-Type") != "application/json" || recorded.Header.Get("Accept") != "application/json" {
+		t.Fatalf("unexpected request %s %s %s %s", recorded.Method, recorded.Path, recorded.Header.Get("Content-Type"), recorded.Header.Get("Accept"))
 	}
-	if form.Get("order_id") != "100" || form.Get("merchant_reference_id") != "ref-001" || form.Get("amount") != "1000" || form.Get("merchant_name") != "Shop" {
-		t.Fatalf("unexpected form %v", form)
+	body := requestBody(t, recorded.Body)
+	want := map[string]any{
+		"merchant_id":             "testmerchantID",
+		"order_id":                "100",
+		"merchant_reference_id":   "ref-001",
+		"frontend_result_url":     "https://shop.test/done",
+		"backend_result_url":      "https://shop.test/wave/callback",
+		"amount":                  json.Number("1000"),
+		"time_to_live_in_seconds": json.Number("300"),
+		"payment_description":     "Order 100",
+		"currency":                "MMK",
+		"hash":                    hmacHex("300testmerchantID1001000https://shop.test/wave/callbackref-001", "test-secret"),
+		"merchant_name":           "Shop",
+		"items":                   `[{"name":"Shoes","amount":600},{"name":"Socks","amount":400}]`,
 	}
-	if form.Get("items") != `[{"name":"Shoes","amount":600},{"name":"Socks","amount":400}]` {
-		t.Fatalf("unexpected items %s", form.Get("items"))
+	if fmt.Sprint(body) != fmt.Sprint(want) {
+		t.Fatalf("unexpected body\n got %v\nwant %v", body, want)
 	}
-	if form.Get("hash") != hmacHex("300testmerchantID1001000https://shop.test/wave/callbackref-001", "test-secret") {
-		t.Fatal("request hash mismatch")
+	if !bytes.Contains(recorded.Body, []byte(`"amount":1000,`)) || !bytes.Contains(recorded.Body, []byte(`"time_to_live_in_seconds":300,`)) {
+		t.Fatalf("amount and time_to_live_in_seconds must be JSON integers: %s", recorded.Body)
 	}
 	if payment.URL != ProductionURL+"/authenticate?transaction_id=enc%2F123%2Babc" || payment.GatewayReference != "enc/123+abc" {
 		t.Fatalf("unexpected payment %+v", payment)
+	}
+}
+
+func TestInitiateSendsTheAdditionalFieldsOnlyWhenSet(t *testing.T) {
+	server := testutil.NewServer(t, testutil.Reply{Body: map[string]any{"message": "success", "transaction_id": "T1"}})
+	data := paymentData()
+	data.AdditionalField3, data.AdditionalField5 = "Info 1", "Info 3"
+
+	if _, err := newGateway(t, server).Initiate(context.Background(), data); err != nil {
+		t.Fatal(err)
+	}
+
+	body := requestBody(t, server.Last(t).Body)
+	if body["additional_field_3"] != "Info 1" || body["additional_field_5"] != "Info 3" {
+		t.Fatalf("unexpected body %v", body)
+	}
+	if _, ok := body["additional_field_4"]; ok {
+		t.Fatalf("an empty additional field must not be sent: %v", body)
+	}
+}
+
+func TestPaymentDataEnforcesTheDocumentedFieldLimits(t *testing.T) {
+	cases := []struct {
+		field  string
+		max    int
+		mutate func(*PaymentData, string)
+		value  string
+	}{
+		{"orderId", 100, func(d *PaymentData, v string) { d.OrderID = v }, strings.Repeat("1", 101)},
+		{"merchantReferenceId", 100, func(d *PaymentData, v string) { d.MerchantReferenceID = v }, strings.Repeat("r", 101)},
+		{"callbackUrl", 255, func(d *PaymentData, v string) { d.CallbackURL = v }, "https://shop.test/" + strings.Repeat("a", 238)},
+		{"returnUrl", 255, func(d *PaymentData, v string) { d.ReturnURL = v }, "https://shop.test/" + strings.Repeat("a", 238)},
+		{"description", 255, func(d *PaymentData, v string) { d.Description = v }, strings.Repeat("d", 256)},
+		{"additionalField3", 50, func(d *PaymentData, v string) { d.AdditionalField3 = v }, strings.Repeat("x", 51)},
+		{"additionalField4", 50, func(d *PaymentData, v string) { d.AdditionalField4 = v }, strings.Repeat("x", 51)},
+		{"additionalField5", 50, func(d *PaymentData, v string) { d.AdditionalField5 = v }, strings.Repeat("x", 51)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.field, func(t *testing.T) {
+			data := paymentData()
+			tc.mutate(data, tc.value[:len(tc.value)-1])
+			if err := data.Validate(); err != nil {
+				t.Fatalf("a value of %d bytes must pass: %v", tc.max, err)
+			}
+			tc.mutate(data, tc.value)
+			var invalid *myanmarpayments.InvalidPaymentDataError
+			want := map[string]string{tc.field: fmt.Sprintf("The %s field must not be greater than %d characters.", tc.field, tc.max)}
+			if err := data.Validate(); !errors.As(err, &invalid) || fmt.Sprint(invalid.Errors) != fmt.Sprint(want) {
+				t.Fatalf("expected %v, got %v", want, err)
+			}
+		})
 	}
 }
 
@@ -92,7 +168,7 @@ func TestInitiateRequestsAtTheBaseURLAndRedirectsToTheBaseRedirectURL(t *testing
 	server := testutil.NewServer(t, testutil.Reply{Body: map[string]any{"message": "success", "transaction_id": "T1"}})
 	config := testConfig()
 	config.BaseURL = server.URL + "/"
-	config.BaseRedirectURL = "https://preprodpayments.wavemoney.io/"
+	config.BaseRedirectURL = "https://preprodpayments.wavemoney.io:8107/"
 	gateway, err := New(config, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -105,7 +181,7 @@ func TestInitiateRequestsAtTheBaseURLAndRedirectsToTheBaseRedirectURL(t *testing
 	if recorded := server.Last(t); recorded.Path != "/payment" {
 		t.Fatalf("expected the payment request at the base URL's /payment, got %s", recorded.Path)
 	}
-	if payment.URL != "https://preprodpayments.wavemoney.io/authenticate?transaction_id=T1" {
+	if payment.URL != "https://preprodpayments.wavemoney.io:8107/authenticate?transaction_id=T1" {
 		t.Fatalf("expected the redirect at the base redirect URL's /authenticate, got %s", payment.URL)
 	}
 }
@@ -153,7 +229,7 @@ func TestAmountDefaultsToItemTotalAndReferenceIsUniquePerAttempt(t *testing.T) {
 }
 
 func TestCallbackHashFollowsTheDocumentedOrderWithNullAsString(t *testing.T) {
-	vector := testutil.Fixture(t, "wave_money/callback.json")
+	vector := testutil.Fixture(t, "wave_pay/callback.json")
 	payload := vector["payload"].(map[string]any)
 	payload["hashValue"] = hmacHex(vector["hash_string"].(string), vector["secret_key"].(string))
 	request, _ := myanmarpayments.NewCallbackRequestFromJSON(payload, nil)
@@ -169,7 +245,7 @@ func TestCallbackHashFollowsTheDocumentedOrderWithNullAsString(t *testing.T) {
 
 func TestEveryDocumentedCallbackStatusIsMapped(t *testing.T) {
 	cases := map[string]myanmarpayments.PaymentStatus{
-		"PAYMENT_CONFIRMED": myanmarpayments.StatusSuccessful, "INSUFFICIENT_BALANCE": myanmarpayments.StatusPending,
+		"PAYMENT_CONFIRMED": myanmarpayments.StatusSuccessful, "INSUFFICIENT_BALANCE": myanmarpayments.StatusFailed,
 		"ACCOUNT_LOCKED": myanmarpayments.StatusFailed, "BILL_COLLECTION_FAILED": myanmarpayments.StatusFailed,
 		"PAYMENT_REQUEST_CANCELLED": myanmarpayments.StatusCanceled, "TRANSACTION_TIMED_OUT": myanmarpayments.StatusExpired,
 		"SCHEDULER_TRANSACTION_TIMED_OUT": myanmarpayments.StatusExpired, "NEW_STATUS": myanmarpayments.StatusUnknown,
@@ -284,7 +360,7 @@ func TestDecimalAmountsNameWave(t *testing.T) {
 	data := PaymentData{OrderID: "100", CallbackURL: "https://shop.test/cb", ReturnURL: "https://shop.test/done", Description: "x",
 		Items: []Item{{"A", myanmarpayments.Kyat(250)}}, Amount: myanmarpayments.MustParseAmount("250.50")}
 	var invalid *myanmarpayments.InvalidPaymentDataError
-	if err := data.Validate(); !errors.As(err, &invalid) || !strings.Contains(invalid.Errors["amount"], "Wave Money does not accept decimal amounts") {
+	if err := data.Validate(); !errors.As(err, &invalid) || !strings.Contains(invalid.Errors["amount"], "Wave Pay does not accept decimal amounts") {
 		t.Fatalf("unexpected error %v", err)
 	}
 }
@@ -312,9 +388,8 @@ func TestItemNamesAreNotHTMLEscaped(t *testing.T) {
 	if _, err := newGateway(t, server).Initiate(context.Background(), data); err != nil {
 		t.Fatal(err)
 	}
-	form, _ := url.ParseQuery(string(server.Last(t).Body))
-	if form.Get("items") != `[{"name":"Tea & <Cake>","amount":1000}]` {
-		t.Fatalf("unexpected items %s", form.Get("items"))
+	if items := requestBody(t, server.Last(t).Body)["items"]; items != `[{"name":"Tea & <Cake>","amount":1000}]` {
+		t.Fatalf("unexpected items %v", items)
 	}
 }
 
@@ -363,11 +438,11 @@ func TestPaymentOverridesReplaceTheConfiguredNameAndTimeToLive(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			form, _ := url.ParseQuery(string(server.Last(t).Body))
-			if form.Get("merchant_name") != tc.wantName || form.Get("time_to_live_in_seconds") != tc.wantTTL {
-				t.Fatalf("unexpected form %v", form)
+			body := requestBody(t, server.Last(t).Body)
+			if body["merchant_name"] != tc.wantName || body["time_to_live_in_seconds"] != json.Number(tc.wantTTL) {
+				t.Fatalf("unexpected body %v", body)
 			}
-			if form.Get("hash") != hmacHex(tc.wantTTL+"testmerchantID1001000https://shop.test/wave/callbackref-001", "test-secret") {
+			if body["hash"] != hmacHex(tc.wantTTL+"testmerchantID1001000https://shop.test/wave/callbackref-001", "test-secret") {
 				t.Fatal("request hash does not use the time to live in effect")
 			}
 			if gateway.Config().MerchantName != "Shop" || gateway.Config().TimeToLiveSeconds != 300 {

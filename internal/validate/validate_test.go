@@ -101,7 +101,7 @@ func TestURLRules(t *testing.T) {
 }
 
 func TestAmountFollowsTheGatewayRule(t *testing.T) {
-	whole := AmountRule{Gateway: "Wave Money"}
+	whole := AmountRule{Gateway: "Wave Pay"}
 	twoPlaces := AmountRule{Gateway: "KBZ Pay", MaxDecimals: 2}
 	cybersource := AmountRule{Gateway: "CyberSource", MaxDecimals: -1, MaxLength: 15, AllowZero: true}
 
@@ -113,7 +113,7 @@ func TestAmountFollowsTheGatewayRule(t *testing.T) {
 	}{
 		{"unset", myanmarpayments.Amount{}, whole, "The amount field is required."},
 		{"negative", myanmarpayments.Kyat(-1), whole, "The amount field must be a non-negative number such as 1000 or 1000.50."},
-		{"decimal where whole required", myanmarpayments.MustParseAmount("10.5"), whole, "Wave Money does not accept decimal amounts; the amount field must be a whole number."},
+		{"decimal where whole required", myanmarpayments.MustParseAmount("10.5"), whole, "Wave Pay does not accept decimal amounts; the amount field must be a whole number."},
 		{"too many decimals", myanmarpayments.MustParseAmount("10.555"), twoPlaces, "KBZ Pay accepts at most 2 decimal places; the amount field has 3."},
 		{"zero", myanmarpayments.Kyat(0), twoPlaces, "The amount field must be greater than 0."},
 		{"too long", myanmarpayments.MustParseAmount("1234567890.123456"), cybersource, "The amount field must not be greater than 15 characters."},
