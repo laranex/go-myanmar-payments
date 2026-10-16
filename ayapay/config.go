@@ -26,13 +26,13 @@ type Config struct {
 }
 
 // ConfigFromEnv reads AYA_PAY_APP_KEY, AYA_PAY_APP_SECRET, AYA_PAY_BASE_URL and
-// MYANMAR_PAYMENTS_HTTP_TIMEOUT, falling back to the AYA_PGW_* names.
+// MYANMAR_PAYMENTS_HTTP_TIMEOUT.
 func ConfigFromEnv(getenv func(string) string) Config {
 	return Config{
-		AppKey:         env.First(getenv, "AYA_PAY_APP_KEY", "AYA_PGW_APP_KEY"),
-		AppSecret:      env.First(getenv, "AYA_PAY_APP_SECRET", "AYA_PGW_APP_SECRET"),
+		AppKey:         env.First(getenv, "AYA_PAY_APP_KEY"),
+		AppSecret:      env.First(getenv, "AYA_PAY_APP_SECRET"),
 		TimeoutSeconds: env.Timeout(getenv),
-		BaseURL:        env.First(getenv, "AYA_PAY_BASE_URL", "AYA_PGW_BASE_URL"),
+		BaseURL:        env.First(getenv, "AYA_PAY_BASE_URL"),
 	}
 }
 

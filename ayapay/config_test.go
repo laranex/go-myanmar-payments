@@ -26,11 +26,15 @@ func TestConfigFromEnvReadsTheAYAVariables(t *testing.T) {
 	}
 }
 
-func TestConfigFromEnvFallsBackToThePGWNames(t *testing.T) {
-	env := map[string]string{"AYA_PGW_APP_KEY": "key", "AYA_PGW_APP_SECRET": "secret", "AYA_PGW_BASE_URL": "https://pgw.test"}
+func TestConfigFromEnvReadsOnlyTheAYAPayNames(t *testing.T) {
+	env := map[string]string{"AYA_PAY_APP_KEY": "key", "AYA_PAY_APP_SECRET": "secret", "AYA_PAY_BASE_URL": "https://aya.test"}
 	config := ConfigFromEnv(func(key string) string { return env[key] })
-	if config.AppKey != "key" || config.AppSecret != "secret" || config.TimeoutSeconds != myanmarpayments.DefaultTimeoutSeconds || config.BaseURL != "https://pgw.test" {
+	if config.AppKey != "key" || config.AppSecret != "secret" || config.TimeoutSeconds != myanmarpayments.DefaultTimeoutSeconds || config.BaseURL != "https://aya.test" {
 		t.Fatalf("unexpected config %+v", config)
+	}
+	legacy := map[string]string{"AYA_PGW_APP_KEY": "key", "AYA_PGW_APP_SECRET": "secret", "AYA_PGW_BASE_URL": "https://aya.test"}
+	if config := ConfigFromEnv(func(key string) string { return legacy[key] }); config.AppKey != "" || config.AppSecret != "" || config.BaseURL != "" {
+		t.Fatalf("expected the AYA_PGW_* names to be ignored, got %+v", config)
 	}
 	if (Config{}).ResolvedBaseURL() != "" {
 		t.Fatal("expected no production fallback")
