@@ -156,7 +156,7 @@ func (g *Gateway) Status(ctx context.Context, reference string) (*myanmarpayment
 func (g *Gateway) HandleCallback(request *myanmarpayments.CallbackRequest) (*myanmarpayments.PaymentCallback, error) {
 	payload := request.ParsedBody()
 
-	if g.config.WebhookSecret != "" && !hmac.Equal([]byte(g.config.WebhookSecret), []byte(request.HeaderValue("X-Webhook-Secret"))) {
+	if !hmac.Equal([]byte(g.config.WebhookSecret), []byte(request.HeaderValue("X-Webhook-Secret"))) {
 		return nil, &myanmarpayments.SignatureVerificationError{Message: "Yoma MMQR callback has a missing or wrong X-Webhook-Secret header.", Raw: payload}
 	}
 

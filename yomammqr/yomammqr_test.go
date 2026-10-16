@@ -22,7 +22,7 @@ var now = time.Unix(1791393600, 0)
 
 func newGateway(t *testing.T, server *testutil.Server, cache myanmarpayments.TokenCache, mutate ...func(*Config)) *Gateway {
 	t.Helper()
-	config := Config{MerchantID: "M001", ClientID: "client", ClientSecret: "secret", WebhookHashKey: "hash-key", APIVersion: "v1rc", TimeoutSeconds: 30}
+	config := testConfig()
 	if server != nil {
 		config.BaseURL = server.URL
 	}
@@ -153,6 +153,9 @@ func TestStatusResultsAreMapped(t *testing.T) {
 	}
 }
 
+// signed carries the configured webhook secret, which every callback must send.
+var signed = http.Header{"X-Webhook-Secret": {"webhook-secret"}}
+
 func callback(t *testing.T, payload map[string]any, header http.Header) *myanmarpayments.CallbackRequest {
 	t.Helper()
 	request, err := myanmarpayments.NewCallbackRequestFromJSON(payload, header)
@@ -166,7 +169,7 @@ func TestCallbackHashIsKeyedWithTheOrderNumberAndHashKey(t *testing.T) {
 	for status, want := range map[string]myanmarpayments.PaymentStatus{"success": myanmarpayments.StatusSuccessful, "fail": myanmarpayments.StatusFailed} {
 		t.Run(status, func(t *testing.T) {
 			hash := hmacHex("orderNumber=ORD-2026-001235&status="+status, "ORD-2026-001235hash-key")
-			result, err := newGateway(t, nil, nil).HandleCallback(callback(t, map[string]any{"orderNumber": "ORD-2026-001235", "status": status, "hashValue": hash}, nil))
+			result, err := newGateway(t, nil, nil).HandleCallback(callback(t, map[string]any{"orderNumber": "ORD-2026-001235", "status": status, "hashValue": hash}, signed))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -180,24 +183,30 @@ func TestCallbackHashIsKeyedWithTheOrderNumberAndHashKey(t *testing.T) {
 func TestCallbackWithAWrongHashIsRejected(t *testing.T) {
 	_, err := newGateway(t, nil, nil).HandleCallback(callback(t, map[string]any{
 		"orderNumber": "ORD-1", "status": "success", "hashValue": hmacHex("orderNumber=ORD-1&status=fail", "ORD-1hash-key"),
-	}, nil))
+	}, signed))
 	var sigErr *myanmarpayments.SignatureVerificationError
 	if !errors.As(err, &sigErr) {
 		t.Fatalf("expected SignatureVerificationError, got %v", err)
 	}
 }
 
-func TestWebhookSecretHeaderIsCheckedWhenConfigured(t *testing.T) {
+func TestWebhookSecretHeaderIsAlwaysChecked(t *testing.T) {
 	gateway := newGateway(t, nil, nil, func(c *Config) { c.WebhookSecret = "shared" })
 	payload := map[string]any{"orderNumber": "ORD-1", "status": "success", "hashValue": hmacHex("orderNumber=ORD-1&status=success", "ORD-1hash-key")}
 
 	if result, err := gateway.HandleCallback(callback(t, payload, http.Header{"X-Webhook-Secret": {"shared"}})); err != nil || !result.IsSuccessful() {
 		t.Fatalf("expected success, got %+v %v", result, err)
 	}
-	_, err := gateway.HandleCallback(callback(t, payload, nil))
-	var sigErr *myanmarpayments.SignatureVerificationError
-	if !errors.As(err, &sigErr) || !strings.Contains(sigErr.Message, "X-Webhook-Secret") {
-		t.Fatalf("expected header error, got %v", err)
+	for name, header := range map[string]http.Header{
+		"missing": nil,
+		"empty":   {"X-Webhook-Secret": {""}},
+		"wrong":   {"X-Webhook-Secret": {"wrong-secret"}},
+	} {
+		_, err := gateway.HandleCallback(callback(t, payload, header))
+		var sigErr *myanmarpayments.SignatureVerificationError
+		if !errors.As(err, &sigErr) || sigErr.Message != "Yoma MMQR callback has a missing or wrong X-Webhook-Secret header." {
+			t.Fatalf("%s header: expected header error, got %v", name, err)
+		}
 	}
 }
 
@@ -207,7 +216,7 @@ func TestValidationAndDefaults(t *testing.T) {
 	if !errors.As(err, &invalid) || invalid.Errors["orderId"] == "" || invalid.Errors["description"] == "" {
 		t.Fatalf("expected limits to fail, got %v", err)
 	}
-	if (Config{}).ResolvedBaseURL() != "https://paymenthubapi.yomabank.com" {
+	if (Config{BaseURL: "https://paymenthubapi.yomabank.com/"}).ResolvedBaseURL() != "https://paymenthubapi.yomabank.com" {
 		t.Fatal("unexpected base URLs")
 	}
 }
@@ -306,7 +315,7 @@ func TestTokenCacheKeyIsSharedWithTheOtherSDKs(t *testing.T) {
 
 func TestNestedStatusFailsVerification(t *testing.T) {
 	body := `{"orderNumber":"ORDER1","status":{"code":"SUCCESS"},"hashValue":"` + hmacHex("orderNumber=ORDER1&status=", "ORDER1hash-key") + `"}`
-	_, err := newGateway(t, nil, nil).HandleCallback(myanmarpayments.NewCallbackRequest([]byte(body), nil, nil))
+	_, err := newGateway(t, nil, nil).HandleCallback(myanmarpayments.NewCallbackRequest([]byte(body), signed, nil))
 	var sigErr *myanmarpayments.SignatureVerificationError
 	if !errors.As(err, &sigErr) {
 		t.Fatalf("expected SignatureVerificationError, got %v", err)

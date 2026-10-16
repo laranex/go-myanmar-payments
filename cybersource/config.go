@@ -6,11 +6,11 @@ import (
 	"github.com/laranex/go-myanmar-payments/v4/internal/env"
 )
 
-// ProductionURL is the Secure Acceptance production host. To use the test host or a proxy, set
-// BaseURL.
+// ProductionURL is the Secure Acceptance production host, production's value for BaseURL; it is
+// not a default.
 const ProductionURL = "https://secureacceptance.cybersource.com"
 
-// Config holds a Secure Acceptance profile. Every field except BaseURL is required.
+// Config holds a Secure Acceptance profile. Every field is required.
 type Config struct {
 	// ProfileID is the Secure Acceptance profile id.
 	ProfileID string
@@ -18,7 +18,8 @@ type Config struct {
 	AccessKey string
 	// SecretKey signs the fields.
 	SecretKey string
-	// BaseURL overrides the Secure Acceptance base URL.
+	// BaseURL is the Secure Acceptance base URL, e.g. ProductionURL or
+	// https://testsecureacceptance.cybersource.com.
 	BaseURL string
 }
 
@@ -34,13 +35,10 @@ func ConfigFromEnv(getenv func(string) string) Config {
 }
 
 func (c Config) validate() error {
-	return env.Require("cyber_source", "profile_id", c.ProfileID, "access_key", c.AccessKey, "secret_key", c.SecretKey)
+	return env.Require("cyber_source", "profile_id", c.ProfileID, "access_key", c.AccessKey, "secret_key", c.SecretKey, "base_url", c.BaseURL)
 }
 
-// ResolvedBaseURL returns the base URL in use: the override, or the production URL.
+// ResolvedBaseURL returns BaseURL without its trailing slash.
 func (c Config) ResolvedBaseURL() string {
-	if strings.TrimSpace(c.BaseURL) != "" {
-		return strings.TrimRight(c.BaseURL, "/")
-	}
-	return ProductionURL
+	return strings.TrimRight(c.BaseURL, "/")
 }

@@ -179,11 +179,6 @@ func (g *Gateway) precreate(ctx context.Context, data PaymentData, tradeType str
 		return order{}, err
 	}
 	ttl := g.timeToLiveMinutes(data)
-	if ttl == 0 {
-		return order{}, &myanmarpayments.InvalidPaymentDataError{Errors: map[string]string{
-			"timeToLiveMinutes": "The timeToLiveMinutes field is required when the kbz_pay configuration has no [time_to_live_in_minutes].",
-		}}
-	}
 
 	biz := map[string]string{
 		"appid":          g.config.AppID,
@@ -277,7 +272,7 @@ func randomNonce() string {
 	return hex.EncodeToString(buffer)
 }
 
-// timeToLiveMinutes returns the payment's time to live, else the configured one; 0 means neither is set.
+// timeToLiveMinutes returns the payment's time to live, else the configured one.
 func (g *Gateway) timeToLiveMinutes(data PaymentData) int {
 	if data.TimeToLiveMinutes != nil {
 		return *data.TimeToLiveMinutes

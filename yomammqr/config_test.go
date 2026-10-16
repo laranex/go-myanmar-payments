@@ -7,6 +7,15 @@ import (
 	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
 )
 
+// testConfig returns a complete, valid configuration with the production URL; tests change only
+// what they check.
+func testConfig() Config {
+	return Config{
+		MerchantID: "M001", ClientID: "client", ClientSecret: "secret", WebhookHashKey: "hash-key", APIVersion: "v1rc",
+		WebhookSecret: "webhook-secret", BaseURL: ProductionURL, TimeoutSeconds: 30,
+	}
+}
+
 func TestConfigFromEnvReadsTheYomaVariables(t *testing.T) {
 	env := map[string]string{
 		"YOMA_MMQR_MERCHANT_ID": "M001", "YOMA_MMQR_CLIENT_ID": "client", "YOMA_MMQR_CLIENT_SECRET": "secret",
@@ -25,9 +34,28 @@ func TestConfigFromEnvReadsTheYomaVariables(t *testing.T) {
 	}
 }
 
-func TestConfigDefaults(t *testing.T) {
-	if (Config{}).ResolvedBaseURL() != ProductionURL {
-		t.Fatal("unexpected defaults")
+func TestResolvedBaseURLHasNoProductionFallback(t *testing.T) {
+	if (Config{}).ResolvedBaseURL() != "" || (Config{BaseURL: ProductionURL + "/"}).ResolvedBaseURL() != ProductionURL {
+		t.Fatal("unexpected base URL")
+	}
+}
+
+func TestNewRequiresEverySettingExceptTheTimeout(t *testing.T) {
+	for key, clear := range map[string]func(*Config){
+		"merchant_id":     func(c *Config) { c.MerchantID = "" },
+		"client_id":       func(c *Config) { c.ClientID = " " },
+		"client_secret":   func(c *Config) { c.ClientSecret = "" },
+		"webhook_hashkey": func(c *Config) { c.WebhookHashKey = "" },
+		"api_version":     func(c *Config) { c.APIVersion = "" },
+		"webhook_secret":  func(c *Config) { c.WebhookSecret = "   " },
+		"base_url":        func(c *Config) { c.BaseURL = "" },
+	} {
+		config := testConfig()
+		clear(&config)
+		var configErr *myanmarpayments.ConfigurationError
+		if _, err := New(config, nil, nil); !errors.As(err, &configErr) || configErr.Key != key || configErr.Invalid || err.Error() != "myanmarpayments: The yoma_mmqr configuration is missing ["+key+"]." {
+			t.Fatalf("expected missing %s, got %v", key, err)
+		}
 	}
 }
 
@@ -39,13 +67,17 @@ func TestNewReportsTheMissingCredential(t *testing.T) {
 	if _, err := New(Config{MerchantID: "M", ClientID: "c", ClientSecret: "s", WebhookHashKey: "h"}, nil, nil); !errors.As(err, &configErr) || configErr.Key != "api_version" {
 		t.Fatalf("expected missing api_version, got %v", err)
 	}
-	if _, err := New(Config{MerchantID: "M", ClientID: "c", ClientSecret: "s", WebhookHashKey: "h", APIVersion: "v1rc", TimeoutSeconds: -1}, nil, nil); !errors.As(err, &configErr) || configErr.Key != "timeout_in_seconds" || !configErr.Invalid {
+	invalid := testConfig()
+	invalid.TimeoutSeconds = -1
+	if _, err := New(invalid, nil, nil); !errors.As(err, &configErr) || configErr.Key != "timeout_in_seconds" || !configErr.Invalid {
 		t.Fatalf("expected invalid timeout_in_seconds, got %v", err)
 	}
 }
 
 func TestNewDefaultsTheTimeout(t *testing.T) {
-	gateway, err := New(Config{MerchantID: "M", ClientID: "c", ClientSecret: "s", WebhookHashKey: "h", APIVersion: "v1rc"}, nil, nil)
+	config := testConfig()
+	config.TimeoutSeconds = 0
+	gateway, err := New(config, nil, nil)
 	if err != nil || gateway.Config().TimeoutSeconds != myanmarpayments.DefaultTimeoutSeconds {
 		t.Fatalf("expected the default timeout, got %v", err)
 	}

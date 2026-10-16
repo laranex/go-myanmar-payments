@@ -22,7 +22,7 @@ import (
 
 func newGateway(t *testing.T, server *testutil.Server) *Gateway {
 	t.Helper()
-	config := Config{AppKey: "app-key", AppSecret: "test-secret", TimeoutSeconds: 30}
+	config := testConfig()
 	if server != nil {
 		config.BaseURL = server.URL
 	}

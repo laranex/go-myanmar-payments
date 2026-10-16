@@ -27,9 +27,12 @@ type callbackHandler interface {
 	HandleCallback(*myanmarpayments.CallbackRequest) (*myanmarpayments.PaymentCallback, error)
 }
 
-func parityGateways(t *testing.T, secrets map[string]any) map[string]callbackHandler {
+// parityGateways builds every gateway from the shared config env, with the shared secrets.
+func parityGateways(t *testing.T, vectors map[string]any) map[string]callbackHandler {
 	t.Helper()
+	secrets := vectors["secrets"].(map[string]any)
 	secret := func(name string) string { return secrets[name].(string) }
+	getenv := parityEnv(vectors, "", nil)
 	must := func(gateway callbackHandler, err error) callbackHandler {
 		t.Helper()
 		if err != nil {
@@ -38,26 +41,29 @@ func parityGateways(t *testing.T, secrets map[string]any) map[string]callbackHan
 		return gateway
 	}
 
+	kbz := kbzpay.ConfigFromEnv(getenv)
+	kbz.AppKey = secret("kbz_pay_app_key")
+	wave := wavemoney.ConfigFromEnv(getenv)
+	wave.SecretKey = secret("wave_money_secret_key")
+	aya := ayapay.ConfigFromEnv(getenv)
+	aya.AppSecret = secret("aya_pay_app_secret")
+	yoma := yomammqr.ConfigFromEnv(getenv)
+	yoma.WebhookHashKey, yoma.WebhookSecret = secret("yoma_mmqr_webhook_hashkey"), secret("yoma_mmqr_webhook_secret")
+	cyber := cybersource.ConfigFromEnv(getenv)
+	cyber.SecretKey = secret("cyber_source_secret_key")
+
 	return map[string]callbackHandler{
-		"kbz_pay": must(kbzpay.New(kbzpay.Config{AppID: "kp123", AppKey: secret("kbz_pay_app_key"), MerchantCode: "100001", TimeoutSeconds: 30}, nil)),
-		"wave_money": must(wavemoney.New(wavemoney.Config{
-			MerchantID: "merchant", SecretKey: secret("wave_money_secret_key"), MerchantName: "Shop",
-			TimeToLiveSeconds: 300, TimeoutSeconds: 30,
-		}, nil)),
-		"aya_pay": must(ayapay.New(ayapay.Config{AppKey: "app-key", AppSecret: secret("aya_pay_app_secret"), TimeoutSeconds: 30}, nil)),
-		"yoma_mmqr": must(yomammqr.New(yomammqr.Config{
-			MerchantID: "merchant", ClientID: "client", ClientSecret: "secret", WebhookHashKey: secret("yoma_mmqr_webhook_hashkey"),
-			APIVersion: "v1rc", TimeoutSeconds: 30,
-		}, nil, nil)),
-		"cyber_source": must(cybersource.New(cybersource.Config{
-			ProfileID: "profile", AccessKey: "access", SecretKey: secret("cyber_source_secret_key"),
-		})),
+		"kbz_pay":      must(kbzpay.New(kbz, nil)),
+		"wave_money":   must(wavemoney.New(wave, nil)),
+		"aya_pay":      must(ayapay.New(aya, nil)),
+		"yoma_mmqr":    must(yomammqr.New(yoma, nil, nil)),
+		"cyber_source": must(cybersource.New(cyber)),
 	}
 }
 
 func TestParityCallbacks(t *testing.T) {
 	vectors := testutil.Fixture(t, "parity/vectors.json")
-	gateways := parityGateways(t, vectors["secrets"].(map[string]any))
+	gateways := parityGateways(t, vectors)
 
 	for name, cases := range vectors["callbacks"].(map[string]any) {
 		gateway, ok := gateways[name]
@@ -69,6 +75,11 @@ func TestParityCallbacks(t *testing.T) {
 			t.Run(name+"/"+vector["name"].(string), func(t *testing.T) {
 				header := http.Header{}
 				header.Set("Content-Type", vector["content_type"].(string))
+				if headers, ok := vector["headers"].(map[string]any); ok {
+					for name, value := range headers {
+						header.Set(name, value.(string))
+					}
+				}
 				request := myanmarpayments.NewCallbackRequest([]byte(vector["body"].(string)), header, nil)
 				expected := vector["expected"].(map[string]any)
 
@@ -152,7 +163,7 @@ func parityConfigGateway(gateway string, vars map[string]string) (map[string]str
 			return nil, nil, err
 		}
 		c := g.Config()
-		return map[string]string{"base_url": c.ResolvedBaseURL()},
+		return map[string]string{"base_url": c.ResolvedBaseURL(), "base_redirect_url": c.ResolvedBaseRedirectURL()},
 			map[string]int{"time_to_live_in_seconds": c.TimeToLiveSeconds, "timeout_in_seconds": c.TimeoutSeconds}, nil
 	case "aya_pay":
 		g, err := ayapay.New(ayapay.ConfigFromEnv(getenv), nil)
@@ -271,7 +282,7 @@ func TestParityYomaTokenCacheKey(t *testing.T) {
 
 	gateway, err := yomammqr.New(yomammqr.Config{
 		MerchantID: "merchant", ClientID: vector["client_id"].(string), ClientSecret: "secret",
-		WebhookHashKey: "hash", APIVersion: "v1rc", TimeoutSeconds: 30, BaseURL: vector["base_url"].(string),
+		WebhookHashKey: "hash", APIVersion: "v1rc", WebhookSecret: "webhook-secret", TimeoutSeconds: 30, BaseURL: vector["base_url"].(string),
 	}, nil, cache)
 	if err != nil {
 		t.Fatal(err)
@@ -377,6 +388,7 @@ func TestParityWaveMoneyRequestOverrides(t *testing.T) {
 	gateway, err := wavemoney.New(wavemoney.Config{
 		MerchantID: config["merchant_id"].(string), SecretKey: config["secret_key"].(string),
 		MerchantName: config["merchant_name"].(string), TimeToLiveSeconds: ttl,
+		BaseURL: wavemoney.ProductionURL, BaseRedirectURL: wavemoney.ProductionURL,
 	}, doer)
 	if err != nil {
 		t.Fatal(err)
@@ -465,23 +477,6 @@ func parityEnv(vectors map[string]any, variable string, value any) func(string) 
 	return func(key string) string { return vars[key] }
 }
 
-// noRequestDoer fails the test when a request is sent.
-type noRequestDoer struct{ t *testing.T }
-
-func (d noRequestDoer) Do(request *http.Request) (*http.Response, error) {
-	d.t.Errorf("unexpected request to %s", request.URL)
-	return nil, errors.New("no request expected")
-}
-
-// assertOnlyError checks err is an *InvalidPaymentDataError holding exactly field: message.
-func assertOnlyError(t *testing.T, err error, field, message string) {
-	t.Helper()
-	var invalid *myanmarpayments.InvalidPaymentDataError
-	if !errors.As(err, &invalid) || len(invalid.Errors) != 1 || invalid.Errors[field] != message {
-		t.Errorf("got %v, want only %s: %s", err, field, message)
-	}
-}
-
 func TestParityKbzPayTimeToLive(t *testing.T) {
 	vectors := testutil.Fixture(t, "parity/vectors.json")
 	vector := vectors["kbz_pay_time_to_live"].(map[string]any)
@@ -508,31 +503,5 @@ func TestParityKbzPayTimeToLive(t *testing.T) {
 		if got, _ := doer.biz["timeout_express"].(string); got != c["timeout_express"] || payment.ExpiresAt.IsZero() {
 			t.Errorf("case %v: timeout_express %q (expires %v)", c, got, payment.ExpiresAt)
 		}
-	}
-
-	missing := vector["missing"].(map[string]any)
-	for _, value := range missing["configs"].([]any) {
-		gateway, err := kbzpay.New(kbzpay.ConfigFromEnv(parityEnv(vectors, variable, value)), noRequestDoer{t})
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, err = gateway.QR(context.Background(), kbzpay.PaymentData{OrderID: "ORDER_1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb"})
-		assertOnlyError(t, err, missing["field"].(string), missing["message"].(string))
-	}
-}
-
-func TestParityWaveMoneyTimeToLiveMissing(t *testing.T) {
-	vectors := testutil.Fixture(t, "parity/vectors.json")
-	vector := vectors["wave_money_time_to_live_missing"].(map[string]any)
-	for _, value := range vector["configs"].([]any) {
-		gateway, err := wavemoney.New(wavemoney.ConfigFromEnv(parityEnv(vectors, vector["variable"].(string), value)), noRequestDoer{t})
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, err = gateway.Initiate(context.Background(), &wavemoney.PaymentData{
-			OrderID: "100", CallbackURL: "https://shop.test/cb", ReturnURL: "https://shop.test/done", Description: "Order 100",
-			Items: []wavemoney.Item{{Name: "Shoes", Amount: myanmarpayments.Kyat(1000)}},
-		})
-		assertOnlyError(t, err, vector["field"].(string), vector["message"].(string))
 	}
 }

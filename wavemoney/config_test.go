@@ -7,17 +7,26 @@ import (
 	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
 )
 
+// testConfig returns a complete, valid configuration with the production URLs; tests change only
+// what they check.
+func testConfig() Config {
+	return Config{
+		MerchantID: "testmerchantID", SecretKey: "test-secret", MerchantName: "Shop", BaseURL: ProductionURL, BaseRedirectURL: ProductionURL,
+		TimeToLiveSeconds: 300, TimeoutSeconds: 30,
+	}
+}
+
 func TestConfigFromEnvReadsTheWaveVariables(t *testing.T) {
 	env := map[string]string{
 		"WAVE_MONEY_MERCHANT_ID": "merchant", "WAVE_MONEY_SECRET_KEY": "secret", "WAVE_MONEY_MERCHANT_NAME": "My Shop", "APP_NAME": "Ignored",
 		"WAVE_MONEY_TIME_TO_LIVE_IN_SECONDS": "600", "MYANMAR_PAYMENTS_HTTP_TIMEOUT": "20",
-		"WAVE_MONEY_BASE_URL": "https://wave.test/",
+		"WAVE_MONEY_BASE_URL": "https://wave.test:8107/", "WAVE_MONEY_BASE_REDIRECT_URL": "https://wave.test/",
 	}
 	config := ConfigFromEnv(func(key string) string { return env[key] })
 	if config.MerchantID != "merchant" || config.SecretKey != "secret" || config.MerchantName != "My Shop" || config.TimeToLiveSeconds != 600 || config.TimeoutSeconds != 20 {
 		t.Fatalf("unexpected config %+v", config)
 	}
-	if config.ResolvedBaseURL() != "https://wave.test" {
+	if config.ResolvedBaseURL() != "https://wave.test:8107" || config.ResolvedBaseRedirectURL() != "https://wave.test" {
 		t.Fatal("unexpected resolved values")
 	}
 
@@ -32,18 +41,30 @@ func TestConfigDefaults(t *testing.T) {
 	if config != (Config{TimeoutSeconds: myanmarpayments.DefaultTimeoutSeconds}) {
 		t.Fatalf("unexpected defaults %+v", config)
 	}
-	production := Config{}
-	if production.ResolvedBaseURL() != ProductionURL {
-		t.Fatal("unexpected production URLs")
+}
+
+func TestNewRequiresEverySettingExceptTheTimeout(t *testing.T) {
+	for key, clear := range map[string]func(*Config){
+		"merchant_id":             func(c *Config) { c.MerchantID = "" },
+		"secret_key":              func(c *Config) { c.SecretKey = " " },
+		"merchant_name":           func(c *Config) { c.MerchantName = "" },
+		"base_url":                func(c *Config) { c.BaseURL = "   " },
+		"base_redirect_url":       func(c *Config) { c.BaseRedirectURL = "" },
+		"time_to_live_in_seconds": func(c *Config) { c.TimeToLiveSeconds = 0 },
+	} {
+		config := testConfig()
+		clear(&config)
+		var configErr *myanmarpayments.ConfigurationError
+		if _, err := New(config, nil); !errors.As(err, &configErr) || configErr.Gateway != "wave_money" || configErr.Key != key || configErr.Invalid ||
+			err.Error() != "myanmarpayments: The wave_money configuration is missing ["+key+"]." {
+			t.Fatalf("expected missing %s, got %v", key, err)
+		}
 	}
 }
 
-func TestNewReportsTheMissingCredential(t *testing.T) {
+func TestNewReportsAnInvalidTimeSetting(t *testing.T) {
 	var configErr *myanmarpayments.ConfigurationError
-	if _, err := New(Config{MerchantID: "m", SecretKey: "s"}, nil); !errors.As(err, &configErr) || configErr.Gateway != "wave_money" || configErr.Key != "merchant_name" {
-		t.Fatalf("expected missing merchant_name, got %v", err)
-	}
-	base := Config{MerchantID: "m", SecretKey: "s", MerchantName: "Shop"}
+	base := testConfig()
 	for _, tc := range []struct {
 		ttl, timeout int
 		key          string
@@ -59,12 +80,8 @@ func TestNewReportsTheMissingCredential(t *testing.T) {
 		}
 	}
 
-	if _, err := New(base, nil); err != nil {
-		t.Fatalf("the time to live is optional, got %v", err)
-	}
-
 	config := base
-	config.TimeToLiveSeconds = 300
+	config.TimeoutSeconds = 0
 	gateway, err := New(config, nil)
 	if err != nil || gateway.Config().TimeoutSeconds != myanmarpayments.DefaultTimeoutSeconds {
 		t.Fatalf("expected the default timeout, got %v", err)

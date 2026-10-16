@@ -6,12 +6,12 @@ import (
 	"github.com/laranex/go-myanmar-payments/v4/internal/env"
 )
 
-// ProductionURL is the production endpoint from the WPPG documentation. To use UAT or a proxy, set
-// BaseURL: payments are requested at its /payment and the customer is sent to its /authenticate.
+// ProductionURL is production's API and payment page host from the WPPG documentation, the
+// production value of both BaseURL and BaseRedirectURL; it is not a default.
 const ProductionURL = "https://payments.wavemoney.io"
 
-// Config holds Wave Money credentials. Every field except TimeToLiveSeconds, TimeoutSeconds and the
-// URL overrides is required.
+// Config holds Wave Money credentials and endpoints. Every field is required except
+// TimeoutSeconds.
 type Config struct {
 	// MerchantID is the merchant id Wave issued.
 	MerchantID string
@@ -19,20 +19,24 @@ type Config struct {
 	SecretKey string
 	// MerchantName is your business name, shown on Wave's payment page.
 	MerchantName string
-	// TimeToLiveSeconds is how long the customer has to pay, a whole number greater than 0
-	// (optional; 0 means unset). A payment's own TimeToLiveSeconds overrides it; with neither set,
-	// Initiate returns *myanmarpayments.InvalidPaymentDataError.
+	// TimeToLiveSeconds is how long the customer has to pay, a whole number greater than 0. A
+	// payment's own TimeToLiveSeconds overrides it.
 	TimeToLiveSeconds int
 	// TimeoutSeconds is the timeout of the default HTTP client, a whole number greater than 0
 	// (optional; 0 means myanmarpayments.DefaultTimeoutSeconds, 30). A client you pass to New
 	// keeps its own timeout.
 	TimeoutSeconds int
-	// BaseURL overrides the API base URL; the customer is sent to its /authenticate page.
+	// BaseURL is the API base URL, e.g. ProductionURL or https://preprodpayments.wavemoney.io:8107.
+	// Payments are requested at its /payment.
 	BaseURL string
+	// BaseRedirectURL is the host the customer is sent to, e.g. ProductionURL or
+	// https://preprodpayments.wavemoney.io. The customer approves the payment at its /authenticate.
+	BaseRedirectURL string
 }
 
 // ConfigFromEnv reads WAVE_MONEY_MERCHANT_ID, WAVE_MONEY_SECRET_KEY, WAVE_MONEY_MERCHANT_NAME,
-// WAVE_MONEY_TIME_TO_LIVE_IN_SECONDS, MYANMAR_PAYMENTS_HTTP_TIMEOUT and WAVE_MONEY_BASE_URL.
+// WAVE_MONEY_BASE_URL, WAVE_MONEY_BASE_REDIRECT_URL, WAVE_MONEY_TIME_TO_LIVE_IN_SECONDS and
+// MYANMAR_PAYMENTS_HTTP_TIMEOUT.
 func ConfigFromEnv(getenv func(string) string) Config {
 	return Config{
 		MerchantID:        env.First(getenv, "WAVE_MONEY_MERCHANT_ID"),
@@ -41,23 +45,26 @@ func ConfigFromEnv(getenv func(string) string) Config {
 		TimeToLiveSeconds: env.Seconds(getenv, "WAVE_MONEY_TIME_TO_LIVE_IN_SECONDS"),
 		TimeoutSeconds:    env.Timeout(getenv),
 		BaseURL:           env.First(getenv, "WAVE_MONEY_BASE_URL"),
+		BaseRedirectURL:   env.First(getenv, "WAVE_MONEY_BASE_REDIRECT_URL"),
 	}
 }
 
 func (c Config) validate() error {
-	if err := env.Require("wave_money", "merchant_id", c.MerchantID, "secret_key", c.SecretKey, "merchant_name", c.MerchantName); err != nil {
+	if err := env.Require("wave_money", "merchant_id", c.MerchantID, "secret_key", c.SecretKey, "merchant_name", c.MerchantName, "base_url", c.BaseURL, "base_redirect_url", c.BaseRedirectURL); err != nil {
 		return err
 	}
-	if err := env.OptionalSeconds("wave_money", "time_to_live_in_seconds", c.TimeToLiveSeconds); err != nil {
+	if err := env.RequiredSeconds("wave_money", "time_to_live_in_seconds", c.TimeToLiveSeconds); err != nil {
 		return err
 	}
 	return env.OptionalSeconds("wave_money", "timeout_in_seconds", c.TimeoutSeconds)
 }
 
-// ResolvedBaseURL returns the API base URL in use: the override, or the production URL.
+// ResolvedBaseURL returns BaseURL without its trailing slash.
 func (c Config) ResolvedBaseURL() string {
-	if strings.TrimSpace(c.BaseURL) != "" {
-		return strings.TrimRight(c.BaseURL, "/")
-	}
-	return ProductionURL
+	return strings.TrimRight(c.BaseURL, "/")
+}
+
+// ResolvedBaseRedirectURL returns BaseRedirectURL without its trailing slash.
+func (c Config) ResolvedBaseRedirectURL() string {
+	return strings.TrimRight(c.BaseRedirectURL, "/")
 }

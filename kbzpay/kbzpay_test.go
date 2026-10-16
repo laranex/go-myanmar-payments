@@ -14,7 +14,7 @@ import (
 
 func newGateway(t *testing.T, server *testutil.Server) *Gateway {
 	t.Helper()
-	config := Config{AppID: "kp123", AppKey: "secret-key", MerchantCode: "100001", TimeoutSeconds: 30, TimeToLiveMinutes: 15}
+	config := testConfig()
 	if server != nil {
 		config.APIURL = server.URL
 	}
@@ -250,7 +250,9 @@ func TestValidationFollowsKBZLimits(t *testing.T) {
 }
 
 func TestConfigNamesAMissingKeyAndNormalisesThePWAURL(t *testing.T) {
-	_, err := New(Config{AppID: "a", MerchantCode: "c"}, nil)
+	config := testConfig()
+	config.AppKey = ""
+	_, err := New(config, nil)
 	var configErr *myanmarpayments.ConfigurationError
 	if !errors.As(err, &configErr) || configErr.Key != "app_key" {
 		t.Fatalf("expected missing app_key, got %v", err)
@@ -260,8 +262,8 @@ func TestConfigNamesAMissingKeyAndNormalisesThePWAURL(t *testing.T) {
 			t.Fatalf("pwa %s normalized to %s", pwa, got)
 		}
 	}
-	if (Config{}).ResolvedAPIURL() != ProductionAPIURL {
-		t.Fatal("production URL not selected")
+	if (Config{}).ResolvedAPIURL() != "" || (Config{APIURL: ProductionAPIURL + "/"}).ResolvedAPIURL() != ProductionAPIURL {
+		t.Fatal("unexpected API URL")
 	}
 }
 

@@ -23,17 +23,17 @@ Requires Go 1.22+ and uses only the standard library. Import the root as `myanma
 
 ## Configure
 
-`payments.FromEnv(os.Getenv, payments.Options{})` reads `KBZ_PAY_*`, `WAVE_MONEY_*`, `AYA_PAY_*` (or `AYA_PGW_*`), `YOMA_MMQR_*` and `CYBER_SOURCE_*` (the same variables as the PHP, Node and Python SDKs), plus the optional `MYANMAR_PAYMENTS_HTTP_TIMEOUT` (seconds, default 30) for every gateway that calls an API. URLs default to each gateway's production endpoints; to test against UAT, set the URL overrides (`KBZ_PAY_BASE_URL`, `KBZ_PAY_PWA_BASE_REDIRECT_URL`, `WAVE_MONEY_BASE_URL`, `AYA_PAY_BASE_URL`, `YOMA_MMQR_BASE_URL`, `CYBER_SOURCE_BASE_URL`) to the UAT URLs. `TimeoutSeconds` (KBZ, Wave, AYA, Yoma) is optional: 0 or an unset variable uses `myanmarpayments.DefaultTimeoutSeconds` (30); a negative or non-whole value is rejected. The time to live is required from the payment or the config: KBZ's `TimeToLiveMinutes` (`KBZ_PAY_TIME_TO_LIVE_IN_MINUTES`, 1 to 120 minutes) and Wave's `TimeToLiveSeconds` (`WAVE_MONEY_TIME_TO_LIVE_IN_SECONDS`, greater than 0) are optional defaults that a payment's own `TimeToLiveMinutes` / `TimeToLiveSeconds` overrides; with neither set, the call returns `*InvalidPaymentDataError` before sending anything. Every other setting is required: credentials, Wave's `MerchantName`, and Yoma's `APIVersion` (e.g. `v1rc`).
+`payments.FromEnv(os.Getenv, payments.Options{})` reads `KBZ_PAY_*`, `WAVE_MONEY_*`, `AYA_PAY_*` (or `AYA_PGW_*`), `YOMA_MMQR_*` and `CYBER_SOURCE_*` (the same variables as the PHP, Node and Python SDKs), plus `MYANMAR_PAYMENTS_HTTP_TIMEOUT` for every gateway that calls an API. Every setting of a gateway you use is required and has no default, except the HTTP timeout in seconds (`TimeoutSeconds`, `MYANMAR_PAYMENTS_HTTP_TIMEOUT`, for every gateway except CyberSource), which defaults to 30 (`myanmarpayments.DefaultTimeoutSeconds`; 0 or an unset variable uses it, a negative or non-whole value is rejected). That includes the URLs (`KBZ_PAY_BASE_URL`, `KBZ_PAY_PWA_BASE_REDIRECT_URL`, `WAVE_MONEY_BASE_URL`, `WAVE_MONEY_BASE_REDIRECT_URL`, `AYA_PAY_BASE_URL`, `YOMA_MMQR_BASE_URL`, `CYBER_SOURCE_BASE_URL`: production's or the gateway's UAT ones; the sub-packages' `Production*` constants, such as `kbzpay.ProductionAPIURL` and `wavemoney.ProductionURL`, name production's), the time to live (KBZ's `TimeToLiveMinutes`, `KBZ_PAY_TIME_TO_LIVE_IN_MINUTES`, 1 to 120; Wave's `TimeToLiveSeconds`, `WAVE_MONEY_TIME_TO_LIVE_IN_SECONDS`, greater than 0; a payment's own `TimeToLiveMinutes` / `TimeToLiveSeconds` overrides them), `YOMA_MMQR_WEBHOOK_SECRET` (every Yoma callback must carry it in `X-Webhook-Secret`), Wave's `MerchantName` (`WAVE_MONEY_MERCHANT_NAME`) and Yoma's `APIVersion` (`YOMA_MMQR_API_VERSION`, e.g. `v1rc`). Wave Money requests payments at `WAVE_MONEY_BASE_URL`'s `/payment` and sends the customer to `WAVE_MONEY_BASE_REDIRECT_URL`'s `/authenticate`.
 
 ```go
 gateways := payments.FromEnv(os.Getenv, payments.Options{}) // create once, share across requests
 kbz, err := gateways.KBZPay() // also WaveMoney(), AYAPay(), YomaMMQR(), CyberSource()
 ```
 
-- Or build one gateway: `kbzpay.New(kbzpay.Config{AppID: "...", AppKey: "...", MerchantCode: "..."}, nil)` or `kbzpay.New(kbzpay.ConfigFromEnv(os.Getenv), nil)`.
+- Or build one gateway: `kbzpay.New(kbzpay.ConfigFromEnv(os.Getenv), nil)` or `kbzpay.New(kbzpay.Config{AppID: "...", AppKey: "...", MerchantCode: "...", APIURL: kbzpay.ProductionAPIURL, PWAURL: kbzpay.ProductionPWAURL, TimeToLiveMinutes: 15}, nil)`.
 - Or pass the settings directly: `payments.New(payments.Config{KBZPay: &kbzpay.Config{...}}, payments.Options{})`.
 - Options: `HTTPClient` is any `myanmarpayments.HTTPDoer` (nil uses an `*http.Client` with the config's `TimeoutSeconds`, 30 by default; a client you pass keeps its own timeout). Yoma and the facade also take a `TokenCache` for the access token (nil uses `NewMemoryTokenCache()`; back it with Redis when you run several processes).
-- A missing setting returns `*myanmarpayments.ConfigurationError` (`Gateway`, `Key`); a time setting that is not a whole number greater than 0 sets `Invalid`.
+- A missing or blank setting returns `*myanmarpayments.ConfigurationError` (`Gateway`, `Key`), e.g. `The wave_money configuration is missing [base_redirect_url].`; a value out of range sets `Invalid`, e.g. `The kbz_pay configuration [time_to_live_in_minutes] must be a whole number from 1 to 120.`
 
 ## Use
 
@@ -57,7 +57,7 @@ if err != nil {
 http.Redirect(w, r, payment.URL, http.StatusFound)
 ```
 
-- `*RedirectPayment` (`URL`) from `kbz.PWA(ctx, data)` and `wave.Initiate(ctx, &data)`. Wave fills `data.MerchantReferenceID` when empty; store it. Wave's `OrderID` and `MerchantReferenceID` may only hold letters, numbers, `_` and `-`. Wave's optional `MerchantName` (`string`, empty uses the config) and `TimeToLiveSeconds` (`*int`, nil uses the config, required when the config has none, 0 is rejected) override the configured values for that payment only.
+- `*RedirectPayment` (`URL`) from `kbz.PWA(ctx, data)` and `wave.Initiate(ctx, &data)`. Wave fills `data.MerchantReferenceID` when empty; store it. Wave's `OrderID` and `MerchantReferenceID` may only hold letters, numbers, `_` and `-`. Wave's optional `MerchantName` (`string`, empty uses the config) and `TimeToLiveSeconds` (`*int`, nil uses the config, 0 is rejected) override the configured values for that payment only.
 - `*FormPayment` from `aya.Initiate(data)` and `cs.Initiate(data)` (no network call): write `payment.HTML()` for an auto-submitting page (`payment.HTMLWithNonce(nonce)` adds your Content-Security-Policy nonce to its inline script; serve it with `Referrer-Policy: strict-origin`), or render `Action`, `Fields` and `Enctype` yourself.
 - `*QrPayment` from `kbz.QR(ctx, data)` (encode `QRString`) and `yoma.Initiate(ctx, data)` (`QRImageDataURI("image/png")`, `ExpiresAt`, `Reference`). A Yoma QR lives `yomammqr.QRLifetime` (120 seconds); renew it with `yoma.RenewQR(ctx, orderID)`.
 - `*AppPayment` from `kbz.App(ctx, data)`: JSON-encode it (`orderId`, `orderInfo`, `sign`, `signType`) for your mobile app.
@@ -89,7 +89,7 @@ return callback.Acknowledgement.Write(w)
 
 - Give the package the raw body: `NewCallbackRequestFromHTTP` reads it once and puts it back, so don't call `r.ParseForm()` first. Bodies over `myanmarpayments.MaxCallbackBodyBytes` (64 KiB) return an error wrapping `ErrCallbackBodyTooLarge`.
 - Check AYA's browser return with `aya.VerifyRedirect(request)`.
-- Yoma MMQR callbacks sign only the order number and status and carry no amount: match the order number to your stored order (its QR was generated for the stored amount) and, to confirm, call `yoma.Status(ctx, reference)` with that order's QR reference (`refLabel`). The status result has no amount either, so trust your stored amount.
+- Yoma MMQR callbacks must carry `YOMA_MMQR_WEBHOOK_SECRET` in the `X-Webhook-Secret` header (compared in constant time); without it, or with a wrong one, `HandleCallback` returns `*SignatureVerificationError`. They sign only the order number and status and carry no amount: match the order number to your stored order (its QR was generated for the stored amount) and, to confirm, call `yoma.Status(ctx, reference)` with that order's QR reference (`refLabel`). The status result has no amount either, so trust your stored amount.
 - For production, store the verified callback, acknowledge immediately, then process it once in the background.
 
 ### Check status and handle errors
@@ -100,7 +100,7 @@ return callback.Acknowledgement.Write(w)
 
 ## Test your app
 
-- Point the gateway at an `httptest.Server` with the config's URL override (`kbzpay.Config{APIURL: server.URL}`), or pass an `HTTPDoer` stub that returns canned responses.
+- Point the gateway at an `httptest.Server` by setting the config's URL to it (`config.APIURL = server.URL`), or pass an `HTTPDoer` stub that returns canned responses.
 - Replay a stored callback with `myanmarpayments.NewCallbackRequestFromJSON(payload, header)` or `NewCallbackRequest(body, header, query)`; it is still signature-checked.
 - To test your own fulfillment code, build `myanmarpayments.PaymentCallback{OrderID: "ORDER_1", Status: myanmarpayments.StatusSuccessful, GatewayStatus: "PAY_SUCCESS"}` yourself.
 

@@ -6,11 +6,12 @@ import (
 	"github.com/laranex/go-myanmar-payments/v4/internal/env"
 )
 
-// ProductionURL is Yoma Bank's production payment hub. To use UAT or a proxy, set BaseURL.
+// ProductionURL is Yoma Bank's production payment hub, production's value for BaseURL; it is not
+// a default.
 const ProductionURL = "https://paymenthubapi.yomabank.com"
 
-// Config holds Yoma MMQR credentials. Every field except TimeoutSeconds, WebhookSecret and
-// BaseURL is required.
+// Config holds Yoma MMQR credentials and endpoints. Every field is required except
+// TimeoutSeconds.
 type Config struct {
 	// MerchantID is the merchant id Yoma issued.
 	MerchantID string
@@ -26,9 +27,10 @@ type Config struct {
 	// (optional; 0 means myanmarpayments.DefaultTimeoutSeconds, 30). A client you pass to New
 	// keeps its own timeout.
 	TimeoutSeconds int
-	// WebhookSecret is the secret you shared with Yoma; when set, callbacks must carry it in X-Webhook-Secret.
+	// WebhookSecret is the secret you shared with Yoma; every callback must carry it in
+	// X-Webhook-Secret.
 	WebhookSecret string
-	// BaseURL overrides the API base URL.
+	// BaseURL is the API base URL, e.g. ProductionURL or https://devapi.yomabank.net.
 	BaseURL string
 }
 
@@ -49,16 +51,13 @@ func ConfigFromEnv(getenv func(string) string) Config {
 }
 
 func (c Config) validate() error {
-	if err := env.Require("yoma_mmqr", "merchant_id", c.MerchantID, "client_id", c.ClientID, "client_secret", c.ClientSecret, "webhook_hashkey", c.WebhookHashKey, "api_version", c.APIVersion); err != nil {
+	if err := env.Require("yoma_mmqr", "merchant_id", c.MerchantID, "client_id", c.ClientID, "client_secret", c.ClientSecret, "webhook_hashkey", c.WebhookHashKey, "api_version", c.APIVersion, "webhook_secret", c.WebhookSecret, "base_url", c.BaseURL); err != nil {
 		return err
 	}
 	return env.OptionalSeconds("yoma_mmqr", "timeout_in_seconds", c.TimeoutSeconds)
 }
 
-// ResolvedBaseURL returns the base URL in use: the override, or the production URL.
+// ResolvedBaseURL returns BaseURL without its trailing slash.
 func (c Config) ResolvedBaseURL() string {
-	if strings.TrimSpace(c.BaseURL) != "" {
-		return strings.TrimRight(c.BaseURL, "/")
-	}
-	return ProductionURL
+	return strings.TrimRight(c.BaseURL, "/")
 }

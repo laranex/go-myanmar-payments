@@ -59,6 +59,20 @@ func TestOptionalSecondsReportsOnlyInvalidValues(t *testing.T) {
 	}
 }
 
+func TestRequiredSecondsReportsMissingAndInvalidValues(t *testing.T) {
+	if err := RequiredSeconds("wave_money", "time_to_live_in_seconds", 300); err != nil {
+		t.Fatalf("RequiredSeconds(300) returned %v", err)
+	}
+
+	var configErr *myanmarpayments.ConfigurationError
+	if !errors.As(RequiredSeconds("wave_money", "time_to_live_in_seconds", 0), &configErr) || configErr.Invalid || configErr.Key != "time_to_live_in_seconds" {
+		t.Fatalf("RequiredSeconds(0) = %+v, want a missing time_to_live_in_seconds", configErr)
+	}
+	if !errors.As(RequiredSeconds("wave_money", "time_to_live_in_seconds", -1), &configErr) || !configErr.Invalid {
+		t.Fatalf("RequiredSeconds(-1) = %+v, want an invalid time_to_live_in_seconds", configErr)
+	}
+}
+
 func TestTimeoutDefaultsWhenUnsetOrBlank(t *testing.T) {
 	cases := map[string]int{"": myanmarpayments.DefaultTimeoutSeconds, "   ": 30, "45": 45, "0": -1, "thirty": -1}
 	for value, want := range cases {

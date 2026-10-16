@@ -6,11 +6,12 @@ import (
 	"github.com/laranex/go-myanmar-payments/v4/internal/env"
 )
 
-// ProductionURL is the AYA Payment Gateway's production host. To use UAT or a proxy, set BaseURL.
+// ProductionURL is the AYA Payment Gateway's production host, production's value for BaseURL; it
+// is not a default.
 const ProductionURL = "https://pgw.ayainnovation.com"
 
-// Config holds AYA Payment Gateway credentials. Every field except TimeoutSeconds and BaseURL is
-// required.
+// Config holds AYA Payment Gateway credentials and endpoints. Every field is required except
+// TimeoutSeconds.
 type Config struct {
 	// AppKey is the public application key, sent with every request.
 	AppKey string
@@ -20,12 +21,12 @@ type Config struct {
 	// (optional; 0 means myanmarpayments.DefaultTimeoutSeconds, 30). A client you pass to New
 	// keeps its own timeout.
 	TimeoutSeconds int
-	// BaseURL overrides the gateway base URL.
+	// BaseURL is the gateway base URL, e.g. ProductionURL or https://uat-pgw.ayainnovation.com.
 	BaseURL string
 }
 
-// ConfigFromEnv reads AYA_PAY_APP_KEY, AYA_PAY_APP_SECRET, MYANMAR_PAYMENTS_HTTP_TIMEOUT and
-// AYA_PAY_BASE_URL, falling back to the AYA_PGW_* names.
+// ConfigFromEnv reads AYA_PAY_APP_KEY, AYA_PAY_APP_SECRET, AYA_PAY_BASE_URL and
+// MYANMAR_PAYMENTS_HTTP_TIMEOUT, falling back to the AYA_PGW_* names.
 func ConfigFromEnv(getenv func(string) string) Config {
 	return Config{
 		AppKey:         env.First(getenv, "AYA_PAY_APP_KEY", "AYA_PGW_APP_KEY"),
@@ -36,16 +37,13 @@ func ConfigFromEnv(getenv func(string) string) Config {
 }
 
 func (c Config) validate() error {
-	if err := env.Require("aya_pay", "app_key", c.AppKey, "app_secret", c.AppSecret); err != nil {
+	if err := env.Require("aya_pay", "app_key", c.AppKey, "app_secret", c.AppSecret, "base_url", c.BaseURL); err != nil {
 		return err
 	}
 	return env.OptionalSeconds("aya_pay", "timeout_in_seconds", c.TimeoutSeconds)
 }
 
-// ResolvedBaseURL returns the base URL in use: the override, or the production URL.
+// ResolvedBaseURL returns BaseURL without its trailing slash.
 func (c Config) ResolvedBaseURL() string {
-	if strings.TrimSpace(c.BaseURL) != "" {
-		return strings.TrimRight(c.BaseURL, "/")
-	}
-	return ProductionURL
+	return strings.TrimRight(c.BaseURL, "/")
 }

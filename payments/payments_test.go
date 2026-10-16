@@ -18,11 +18,20 @@ import (
 
 func configured() Config {
 	return Config{
-		KBZPay:      &kbzpay.Config{AppID: "kp123", AppKey: "key", MerchantCode: "100001", TimeoutSeconds: 30},
-		WaveMoney:   &wavemoney.Config{MerchantID: "merchant", SecretKey: "secret", MerchantName: "Shop", TimeToLiveSeconds: 300, TimeoutSeconds: 30},
-		AYAPay:      &ayapay.Config{AppKey: "app-key", AppSecret: "secret", TimeoutSeconds: 30},
-		YomaMMQR:    &yomammqr.Config{MerchantID: "M", ClientID: "client", ClientSecret: "secret", WebhookHashKey: "hash", APIVersion: "v1rc", TimeoutSeconds: 30},
-		CyberSource: &cybersource.Config{ProfileID: "profile", AccessKey: "access", SecretKey: "secret"},
+		KBZPay: &kbzpay.Config{
+			AppID: "kp123", AppKey: "key", MerchantCode: "100001", APIURL: kbzpay.ProductionAPIURL, PWAURL: kbzpay.ProductionPWAURL,
+			TimeToLiveMinutes: 15, TimeoutSeconds: 30,
+		},
+		WaveMoney: &wavemoney.Config{
+			MerchantID: "merchant", SecretKey: "secret", MerchantName: "Shop", BaseURL: wavemoney.ProductionURL,
+			BaseRedirectURL: wavemoney.ProductionURL, TimeToLiveSeconds: 300, TimeoutSeconds: 30,
+		},
+		AYAPay: &ayapay.Config{AppKey: "app-key", AppSecret: "secret", BaseURL: ayapay.ProductionURL, TimeoutSeconds: 30},
+		YomaMMQR: &yomammqr.Config{
+			MerchantID: "M", ClientID: "client", ClientSecret: "secret", WebhookHashKey: "hash", APIVersion: "v1rc",
+			WebhookSecret: "webhook-secret", BaseURL: yomammqr.ProductionURL, TimeoutSeconds: 30,
+		},
+		CyberSource: &cybersource.Config{ProfileID: "profile", AccessKey: "access", SecretKey: "secret", BaseURL: cybersource.ProductionURL},
 	}
 }
 
@@ -73,7 +82,10 @@ func TestAMissingGatewayNamesItsFirstKey(t *testing.T) {
 }
 
 func TestFromEnvReadsTheEnvironmentOnFirstUseAndRetriesAfterAFailure(t *testing.T) {
-	env := map[string]string{"KBZ_PAY_APP_ID": "kp123", "KBZ_PAY_APP_KEY": "key", "MYANMAR_PAYMENTS_HTTP_TIMEOUT": "30"}
+	env := map[string]string{
+		"KBZ_PAY_APP_ID": "kp123", "KBZ_PAY_APP_KEY": "key", "KBZ_PAY_BASE_URL": kbzpay.ProductionAPIURL,
+		"KBZ_PAY_PWA_BASE_REDIRECT_URL": kbzpay.ProductionPWAURL, "KBZ_PAY_TIME_TO_LIVE_IN_MINUTES": "15", "MYANMAR_PAYMENTS_HTTP_TIMEOUT": "30",
+	}
 	var mu sync.Mutex
 	gateways := FromEnv(func(key string) string {
 		mu.Lock()

@@ -32,7 +32,9 @@ func tokenServer(t *testing.T, release <-chan struct{}, tokenRequests *int32) *G
 	}))
 	t.Cleanup(server.Close)
 
-	gateway, err := New(Config{MerchantID: "M", ClientID: "c", ClientSecret: "s", WebhookHashKey: "h", APIVersion: "v1rc", TimeoutSeconds: 30, BaseURL: server.URL}, nil, nil)
+	config := testConfig()
+	config.BaseURL = server.URL
+	gateway, err := New(config, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

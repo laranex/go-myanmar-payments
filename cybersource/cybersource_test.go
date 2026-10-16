@@ -12,9 +12,15 @@ import (
 	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
 )
 
+// testConfig returns a complete, valid configuration with the production URL; tests change only
+// what they check.
+func testConfig() Config {
+	return Config{ProfileID: "profile", AccessKey: "access", SecretKey: "secret", BaseURL: ProductionURL}
+}
+
 func newGateway(t *testing.T) *Gateway {
 	t.Helper()
-	gateway, err := New(Config{ProfileID: "profile", AccessKey: "access", SecretKey: "secret"})
+	gateway, err := New(testConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,12 +206,13 @@ func TestUnsignedAmountAndReferenceAreIgnored(t *testing.T) {
 func TestConfigFromEnvAndEndpoints(t *testing.T) {
 	env := map[string]string{
 		"CYBER_SOURCE_PROFILE_ID": "profile", "CYBER_SOURCE_ACCESS_KEY": "access", "CYBER_SOURCE_SECRET_KEY": "secret",
+		"CYBER_SOURCE_BASE_URL": "https://testsecureacceptance.cybersource.com/",
 	}
 	config := ConfigFromEnv(func(key string) string { return env[key] })
 	if config.ProfileID != "profile" || config.AccessKey != "access" || config.SecretKey != "secret" {
 		t.Fatalf("unexpected config %+v", config)
 	}
-	if config.ResolvedBaseURL() != ProductionURL || (Config{BaseURL: " "}).ResolvedBaseURL() != ProductionURL || (Config{BaseURL: "https://cs.test/"}).ResolvedBaseURL() != "https://cs.test" {
+	if config.ResolvedBaseURL() != "https://testsecureacceptance.cybersource.com" || (Config{}).ResolvedBaseURL() != "" || (Config{BaseURL: "https://cs.test/"}).ResolvedBaseURL() != "https://cs.test" {
 		t.Fatal("unexpected base URL")
 	}
 
@@ -213,9 +220,18 @@ func TestConfigFromEnvAndEndpoints(t *testing.T) {
 	if err != nil || gateway.Config() != config {
 		t.Fatalf("unexpected gateway %v", err)
 	}
-	var configErr *myanmarpayments.ConfigurationError
-	if _, err := New(Config{ProfileID: "p", AccessKey: "a"}); !errors.As(err, &configErr) || configErr.Key != "secret_key" {
-		t.Fatalf("expected missing secret_key, got %v", err)
+	for key, clear := range map[string]func(*Config){
+		"profile_id": func(c *Config) { c.ProfileID = "" },
+		"access_key": func(c *Config) { c.AccessKey = "" },
+		"secret_key": func(c *Config) { c.SecretKey = " " },
+		"base_url":   func(c *Config) { c.BaseURL = "   " },
+	} {
+		config := testConfig()
+		clear(&config)
+		var configErr *myanmarpayments.ConfigurationError
+		if _, err := New(config); !errors.As(err, &configErr) || configErr.Key != key || err.Error() != "myanmarpayments: The cyber_source configuration is missing ["+key+"]." {
+			t.Fatalf("expected missing %s, got %v", key, err)
+		}
 	}
 }
 

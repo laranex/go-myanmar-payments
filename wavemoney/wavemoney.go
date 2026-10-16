@@ -68,9 +68,9 @@ func (g *Gateway) Config() Config { return g.config }
 // Initiate creates a payment request and returns Wave's page to redirect the customer to.
 // Once data passes validation it fills data.MerchantReferenceID with a random id when empty, so
 // store it afterwards. Invalid data is returned untouched. A non-empty data.MerchantName and a
-// non-nil data.TimeToLiveSeconds override the configured values for this payment only. With
-// neither data.TimeToLiveSeconds nor Config.TimeToLiveSeconds set, it returns
-// *myanmarpayments.InvalidPaymentDataError before sending anything.
+// non-nil data.TimeToLiveSeconds override the configured values for this payment only. The
+// payment is requested at Config.BaseURL's /payment and the customer is sent to
+// Config.BaseRedirectURL's /authenticate.
 func (g *Gateway) Initiate(ctx context.Context, data *PaymentData) (*myanmarpayments.RedirectPayment, error) {
 	if err := data.Validate(); err != nil {
 		return nil, err
@@ -78,11 +78,6 @@ func (g *Gateway) Initiate(ctx context.Context, data *PaymentData) (*myanmarpaym
 	ttl := g.config.TimeToLiveSeconds
 	if data.TimeToLiveSeconds != nil {
 		ttl = *data.TimeToLiveSeconds
-	}
-	if ttl == 0 {
-		return nil, &myanmarpayments.InvalidPaymentDataError{Errors: map[string]string{
-			"timeToLiveSeconds": "The timeToLiveSeconds field is required when the wave_money configuration has no [time_to_live_in_seconds].",
-		}}
 	}
 	if data.MerchantReferenceID == "" {
 		data.MerchantReferenceID = randomReference()
@@ -149,7 +144,7 @@ func (g *Gateway) Initiate(ctx context.Context, data *PaymentData) (*myanmarpaym
 
 	return &myanmarpayments.RedirectPayment{
 		OrderID:          data.OrderID,
-		URL:              g.config.ResolvedBaseURL() + "/authenticate?transaction_id=" + url.QueryEscape(transactionID),
+		URL:              g.config.ResolvedBaseRedirectURL() + "/authenticate?transaction_id=" + url.QueryEscape(transactionID),
 		GatewayReference: transactionID,
 		Raw:              body,
 	}, nil

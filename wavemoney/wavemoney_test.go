@@ -17,7 +17,7 @@ import (
 
 func newGateway(t *testing.T, server *testutil.Server) *Gateway {
 	t.Helper()
-	config := Config{MerchantID: "testmerchantID", SecretKey: "test-secret", MerchantName: "Shop", TimeToLiveSeconds: 300, TimeoutSeconds: 30}
+	config := testConfig()
 	if server != nil {
 		config.BaseURL = server.URL
 	}
@@ -83,8 +83,30 @@ func TestInitiatePostsAHashedFormAndRedirectsToAuthenticate(t *testing.T) {
 	if form.Get("hash") != hmacHex("300testmerchantID1001000https://shop.test/wave/callbackref-001", "test-secret") {
 		t.Fatal("request hash mismatch")
 	}
-	if payment.URL != server.URL+"/authenticate?transaction_id=enc%2F123%2Babc" || payment.GatewayReference != "enc/123+abc" {
+	if payment.URL != ProductionURL+"/authenticate?transaction_id=enc%2F123%2Babc" || payment.GatewayReference != "enc/123+abc" {
 		t.Fatalf("unexpected payment %+v", payment)
+	}
+}
+
+func TestInitiateRequestsAtTheBaseURLAndRedirectsToTheBaseRedirectURL(t *testing.T) {
+	server := testutil.NewServer(t, testutil.Reply{Body: map[string]any{"message": "success", "transaction_id": "T1"}})
+	config := testConfig()
+	config.BaseURL = server.URL + "/"
+	config.BaseRedirectURL = "https://preprodpayments.wavemoney.io/"
+	gateway, err := New(config, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	payment, err := gateway.Initiate(context.Background(), paymentData())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recorded := server.Last(t); recorded.Path != "/payment" {
+		t.Fatalf("expected the payment request at the base URL's /payment, got %s", recorded.Path)
+	}
+	if payment.URL != "https://preprodpayments.wavemoney.io/authenticate?transaction_id=T1" {
+		t.Fatalf("expected the redirect at the base redirect URL's /authenticate, got %s", payment.URL)
 	}
 }
 
@@ -248,9 +270,12 @@ func TestValidationAcceptsHTTPCallbackURLs(t *testing.T) {
 	}
 }
 
-func TestDocumentedHosts(t *testing.T) {
-	production := Config{}
-	if production.ResolvedBaseURL() != ProductionURL {
+func TestResolvedURLsTrimTheTrailingSlashWithoutAProductionFallback(t *testing.T) {
+	if (Config{}).ResolvedBaseURL() != "" || (Config{}).ResolvedBaseRedirectURL() != "" {
+		t.Fatal("expected no production fallback")
+	}
+	config := Config{BaseURL: ProductionURL + "/", BaseRedirectURL: ProductionURL + "/"}
+	if config.ResolvedBaseURL() != ProductionURL || config.ResolvedBaseRedirectURL() != ProductionURL {
 		t.Fatal("unexpected production hosts")
 	}
 }
