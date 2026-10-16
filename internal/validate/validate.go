@@ -113,17 +113,19 @@ func (v *Validator) URL(field, value string) *Validator {
 }
 
 var (
-	negativeAmount = regexp.MustCompile(`^-[0-9]+$`)
-	hostLabel      = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$`)
-	portPattern    = regexp.MustCompile(`^[0-9]{1,5}$`)
+	negativeAmount  = regexp.MustCompile(`^-[0-9]+$`)
+	hostLabel       = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$`)
+	portPattern     = regexp.MustCompile(`^[0-9]{1,5}$`)
+	userInfoPattern = regexp.MustCompile(`^(?:[A-Za-z0-9\-._~!$&'()*+,;=:]|%[0-9A-Fa-f]{2})*$`)
 )
 
 // IsHTTPURL reports whether value is a URL the way PHP's FILTER_VALIDATE_URL with an http or
 // https scheme accepts it, the rule every Laranex SDK shares: printable ASCII only (no
 // whitespace or control characters); "http://" or "https://" in any case followed by a host; the
-// host is a bracketed IP literal or dot-separated labels of letters, digits and inner "-" (1 to
+// host is a bracketed IPv6 literal or dot-separated labels of letters, digits and inner "-" (1 to
 // 63 characters each, at most 253 in all, one trailing dot allowed); a port is 0 to 65535. User
-// info, path, query and fragment may hold any printable ASCII.
+// info holds unreserved and sub-delim characters, ":" and %XX escapes; path, query and fragment
+// may hold any printable ASCII.
 func IsHTTPURL(value string) bool {
 	for i := 0; i < len(value); i++ {
 		if value[i] < 0x21 || value[i] > 0x7e {
@@ -146,6 +148,9 @@ func IsHTTPURL(value string) bool {
 		authority = rest[:end]
 	}
 	if at := strings.LastIndex(authority, "@"); at >= 0 {
+		if !userInfoPattern.MatchString(authority[:at]) {
+			return false
+		}
 		authority = authority[at+1:]
 	}
 

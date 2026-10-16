@@ -93,7 +93,7 @@ return callback.Acknowledgement.Write(w)
 ```
 
 - Give the package the raw body: `NewCallbackRequestFromHTTP` reads it once and puts it back, so don't call `r.ParseForm()` first. Bodies over `myanmarpayments.MaxCallbackBodyBytes` (64 KiB) return an error wrapping `ErrCallbackBodyTooLarge`.
-- A bad or wrong signature fails with `… signature`/`hash`/`checksum verification failed.`; a correctly signed callback with bad values fails with `Wave Pay callback is malformed.`, `AYA Pay callback payload is malformed.` or `CyberSource callback is malformed.`. Both are `*SignatureVerificationError`.
+- A bad or wrong signature fails with `… signature`/`hash`/`checksum verification failed.`; a correctly signed callback with bad values fails with `Wave Pay callback is malformed.`, `AYA Pay {callback|redirect|enquiry response} payload is malformed.` or `CyberSource callback is malformed.`. Both are `*SignatureVerificationError`.
 - Check AYA's browser return with `aya.VerifyRedirect(request)`.
 - Yoma MMQR callbacks need the `X-Webhook-Secret` header (`YOMA_MMQR_WEBHOOK_SECRET`) and carry no amount: confirm with `yoma.Status(ctx, reference)` and trust your stored amount.
 - For production, store the verified callback, acknowledge immediately, then process it once in the background.

@@ -46,10 +46,10 @@ const MaxCallbackBodyBytes = 64 << 10
 var ErrCallbackBodyTooLarge = errors.New("myanmarpayments: The callback body is too large")
 
 // NewCallbackRequestFromHTTP reads the body of r once and keeps its headers and query. The query
-// is decoded like a urlencoded body (see ParsedBody): names are kept exactly as sent and a bad
-// "%" escape or a ";" never drops a pair. The body of r is replaced so it can still be read afterwards. A body larger than
-// MaxCallbackBodyBytes is not read past the limit and returns an error wrapping
-// ErrCallbackBodyTooLarge.
+// is decoded like a urlencoded body (see ParsedBody): names are kept exactly as sent, the first
+// value of a repeated name wins and a bad "%" escape or a ";" never drops a pair. The body of r
+// is replaced so it can still be read afterwards. A body larger than MaxCallbackBodyBytes is not
+// read past the limit and returns an error wrapping ErrCallbackBodyTooLarge.
 func NewCallbackRequestFromHTTP(r *http.Request) (*CallbackRequest, error) {
 	var body []byte
 	if r.Body != nil {
