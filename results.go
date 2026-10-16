@@ -109,7 +109,7 @@ type QrPayment struct {
 	QRString string
 	// QRImage is a base64 encoded image to display as is (Yoma MMQR).
 	QRImage string
-	// ExpiresAt is when the QR stops being payable; zero when the gateway does not limit it.
+	// ExpiresAt is when the QR stops being payable.
 	ExpiresAt time.Time
 	// Reference is the gateway's id for this QR, used to check its status (Yoma refLabel).
 	Reference string
