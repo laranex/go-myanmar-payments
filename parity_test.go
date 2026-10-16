@@ -152,7 +152,7 @@ func parityConfigGateway(gateway string, vars map[string]string) (map[string]str
 			return nil, nil, err
 		}
 		c := g.Config()
-		return map[string]string{"base_url": c.ResolvedBaseURL(), "authenticate_url": c.ResolvedAuthenticateURL()},
+		return map[string]string{"base_url": c.ResolvedBaseURL()},
 			map[string]int{"time_to_live_in_seconds": c.TimeToLiveSeconds, "timeout_in_seconds": c.TimeoutSeconds}, nil
 	case "aya_pay":
 		g, err := ayapay.New(ayapay.ConfigFromEnv(getenv), nil)

@@ -149,7 +149,7 @@ func (g *Gateway) Initiate(ctx context.Context, data *PaymentData) (*myanmarpaym
 
 	return &myanmarpayments.RedirectPayment{
 		OrderID:          data.OrderID,
-		URL:              g.config.ResolvedAuthenticateURL() + "/authenticate?transaction_id=" + url.QueryEscape(transactionID),
+		URL:              g.config.ResolvedBaseURL() + "/authenticate?transaction_id=" + url.QueryEscape(transactionID),
 		GatewayReference: transactionID,
 		Raw:              body,
 	}, nil

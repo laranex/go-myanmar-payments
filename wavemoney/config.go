@@ -6,12 +6,9 @@ import (
 	"github.com/laranex/go-myanmar-payments/v4/internal/env"
 )
 
-// Production endpoints from the WPPG documentation. To use UAT or a proxy, set BaseURL and
-// AuthenticateURL.
-const (
-	ProductionURL             = "https://payments.wavemoney.io"
-	ProductionAuthenticateURL = "https://payments.wavemoney.io"
-)
+// ProductionURL is the production endpoint from the WPPG documentation. To use UAT or a proxy, set
+// BaseURL: payments are requested at its /payment and the customer is sent to its /authenticate.
+const ProductionURL = "https://payments.wavemoney.io"
 
 // Config holds Wave Money credentials. Every field except TimeToLiveSeconds, TimeoutSeconds and the
 // URL overrides is required.
@@ -30,16 +27,12 @@ type Config struct {
 	// (optional; 0 means myanmarpayments.DefaultTimeoutSeconds, 30). A client you pass to New
 	// keeps its own timeout.
 	TimeoutSeconds int
-	// BaseURL overrides the API base URL.
+	// BaseURL overrides the API base URL; the customer is sent to its /authenticate page.
 	BaseURL string
-	// AuthenticateURL overrides the host the customer is redirected to. Wave serves it without
-	// the API port.
-	AuthenticateURL string
 }
 
 // ConfigFromEnv reads WAVE_MONEY_MERCHANT_ID, WAVE_MONEY_SECRET_KEY, WAVE_MONEY_MERCHANT_NAME,
-// WAVE_MONEY_TIME_TO_LIVE_IN_SECONDS, MYANMAR_PAYMENTS_HTTP_TIMEOUT, WAVE_MONEY_BASE_URL and
-// WAVE_MONEY_AUTHENTICATE_URL.
+// WAVE_MONEY_TIME_TO_LIVE_IN_SECONDS, MYANMAR_PAYMENTS_HTTP_TIMEOUT and WAVE_MONEY_BASE_URL.
 func ConfigFromEnv(getenv func(string) string) Config {
 	return Config{
 		MerchantID:        env.First(getenv, "WAVE_MONEY_MERCHANT_ID"),
@@ -48,7 +41,6 @@ func ConfigFromEnv(getenv func(string) string) Config {
 		TimeToLiveSeconds: env.Seconds(getenv, "WAVE_MONEY_TIME_TO_LIVE_IN_SECONDS"),
 		TimeoutSeconds:    env.Timeout(getenv),
 		BaseURL:           env.First(getenv, "WAVE_MONEY_BASE_URL"),
-		AuthenticateURL:   env.First(getenv, "WAVE_MONEY_AUTHENTICATE_URL"),
 	}
 }
 
@@ -68,13 +60,4 @@ func (c Config) ResolvedBaseURL() string {
 		return strings.TrimRight(c.BaseURL, "/")
 	}
 	return ProductionURL
-}
-
-// ResolvedAuthenticateURL returns the authenticate host in use: the override, or the production
-// host.
-func (c Config) ResolvedAuthenticateURL() string {
-	if strings.TrimSpace(c.AuthenticateURL) != "" {
-		return strings.TrimRight(c.AuthenticateURL, "/")
-	}
-	return ProductionAuthenticateURL
 }

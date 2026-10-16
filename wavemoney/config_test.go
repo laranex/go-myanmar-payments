@@ -11,13 +11,13 @@ func TestConfigFromEnvReadsTheWaveVariables(t *testing.T) {
 	env := map[string]string{
 		"WAVE_MONEY_MERCHANT_ID": "merchant", "WAVE_MONEY_SECRET_KEY": "secret", "WAVE_MONEY_MERCHANT_NAME": "My Shop", "APP_NAME": "Ignored",
 		"WAVE_MONEY_TIME_TO_LIVE_IN_SECONDS": "600", "MYANMAR_PAYMENTS_HTTP_TIMEOUT": "20",
-		"WAVE_MONEY_BASE_URL": "https://wave.test/", "WAVE_MONEY_AUTHENTICATE_URL": "https://pay.wave.test/",
+		"WAVE_MONEY_BASE_URL": "https://wave.test/",
 	}
 	config := ConfigFromEnv(func(key string) string { return env[key] })
 	if config.MerchantID != "merchant" || config.SecretKey != "secret" || config.MerchantName != "My Shop" || config.TimeToLiveSeconds != 600 || config.TimeoutSeconds != 20 {
 		t.Fatalf("unexpected config %+v", config)
 	}
-	if config.ResolvedBaseURL() != "https://wave.test" || config.ResolvedAuthenticateURL() != "https://pay.wave.test" {
+	if config.ResolvedBaseURL() != "https://wave.test" {
 		t.Fatal("unexpected resolved values")
 	}
 
@@ -33,7 +33,7 @@ func TestConfigDefaults(t *testing.T) {
 		t.Fatalf("unexpected defaults %+v", config)
 	}
 	production := Config{}
-	if production.ResolvedBaseURL() != ProductionURL || production.ResolvedAuthenticateURL() != ProductionAuthenticateURL {
+	if production.ResolvedBaseURL() != ProductionURL {
 		t.Fatal("unexpected production URLs")
 	}
 }
