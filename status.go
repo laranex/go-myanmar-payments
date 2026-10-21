@@ -54,4 +54,7 @@ const (
 	FlowQR PaymentFlow = "qr"
 	// FlowApp hands a signed payload to your mobile app, which opens the wallet SDK.
 	FlowApp PaymentFlow = "app"
+	// FlowMiniApp hands a signed payload to your mini app page, which passes it to the wallet's
+	// JavaScript SDK.
+	FlowMiniApp PaymentFlow = "mini_app"
 )

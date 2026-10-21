@@ -17,11 +17,33 @@ func TestEveryResultReportsItsFlow(t *testing.T) {
 		FlowForm:     &FormPayment{},
 		FlowQR:       &QrPayment{},
 		FlowApp:      &AppPayment{},
+		FlowMiniApp:  &MiniAppPayment{},
 	}
 	for want, result := range cases {
 		if result.Flow() != want {
 			t.Fatalf("%T: got %s, want %s", result, result.Flow(), want)
 		}
+	}
+}
+
+func TestMiniAppPaymentWritesTheMakePaymentObject(t *testing.T) {
+	payment := MiniAppPayment{
+		OrderID: "O<1>", Amount: MustParseAmount("1000"), MiniAppID: "M", MerchantReferenceID: "R/ü", CallbackURL: "https://shop.test/cb?a=1&b=2",
+		HashValue: "h", Items: []MiniAppItem{{Name: "A \"B\"\n", Amount: Kyat(400)}, {Name: "C", Amount: MustParseAmount("600")}},
+	}
+	want := `{"amount":1000,"miniAppID":"M","merchantRefID":"R/ü","orderID":"O<1>","callBackUrl":"https://shop.test/cb?a=1&b=2","hashValue":"h","items":[{"name":"A \"B\"\n","amount":400},{"name":"C","amount":600}]}`
+	if payment.JSON() != want {
+		t.Fatalf("json\n got %s\nwant %s", payment.JSON(), want)
+	}
+	marshaled, err := json.Marshal(payment)
+	if err != nil || !json.Valid(marshaled) || !strings.Contains(string(marshaled), `"orderID":"O\u003c1\u003e"`) {
+		t.Fatalf("marshaled %s, %v", marshaled, err)
+	}
+	if got := (MiniAppPayment{}).JSON(); got != `{"amount":0,"miniAppID":"","merchantRefID":"","orderID":"","callBackUrl":"","hashValue":"","items":[]}` {
+		t.Fatalf("empty payment %s", got)
+	}
+	if got := (MiniAppPayment{Items: []MiniAppItem{{Name: "\xff"}}}).JSON(); !strings.Contains(got, "\"name\":\"\ufffd\"") {
+		t.Fatalf("invalid UTF-8 %s", got)
 	}
 }
 

@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// TokenCache stores access tokens between calls (used by Yoma MMQR).
+// TokenCache stores access tokens between calls (used by Yoma MMQR and Wave Pay Mini App).
 // Implement it on top of Redis or similar to share tokens between processes.
 type TokenCache interface {
 	Get(key string) (string, bool)

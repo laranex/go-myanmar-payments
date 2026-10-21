@@ -1,6 +1,8 @@
 package myanmarpayments
 
 import (
+	"bytes"
+	"encoding/json"
 	"strings"
 	"time"
 )
@@ -148,3 +150,79 @@ type AppPayment struct {
 
 // Flow returns FlowApp.
 func (AppPayment) Flow() PaymentFlow { return FlowApp }
+
+// MiniAppItem is a line item of a MiniAppPayment.
+type MiniAppItem struct {
+	// Name is the item name.
+	Name string
+	// Amount is the item amount in whole units.
+	Amount Amount
+}
+
+// MiniAppPayment: pass JSON() to your mini app page, which hands it unchanged to the wallet's
+// JavaScript SDK (Wave Pay Mini App: WaveJsSDK.paymentModule.makePayment(payload)). No request
+// is sent to the gateway.
+type MiniAppPayment struct {
+	// OrderID is your order id (orderID).
+	OrderID string
+	// Amount is the signed total, in whole units.
+	Amount Amount
+	// MiniAppID is the configured mini app id (miniAppID).
+	MiniAppID string
+	// MerchantReferenceID is your reference for this attempt (merchantRefID).
+	MerchantReferenceID string
+	// CallbackURL is the signed callback URL (callBackUrl).
+	CallbackURL string
+	// HashValue is the payload's hash (hashValue).
+	HashValue string
+	// Items are the line items.
+	Items []MiniAppItem
+}
+
+// Flow returns FlowMiniApp.
+func (MiniAppPayment) Flow() PaymentFlow { return FlowMiniApp }
+
+// JSON returns exactly the object makePayment takes, as compact JSON in this key order: amount,
+// miniAppID, merchantRefID, orderID, callBackUrl, hashValue and items ([{name, amount}]).
+// Amounts are JSON integers with every digit (their whole part); slashes, "<", ">", "&" and
+// non-ASCII characters are not escaped, the same text every Laranex SDK writes.
+func (p MiniAppPayment) JSON() string {
+	var b strings.Builder
+	b.WriteString(`{"amount":` + jsonInteger(p.Amount))
+	b.WriteString(`,"miniAppID":` + jsonString(p.MiniAppID))
+	b.WriteString(`,"merchantRefID":` + jsonString(p.MerchantReferenceID))
+	b.WriteString(`,"orderID":` + jsonString(p.OrderID))
+	b.WriteString(`,"callBackUrl":` + jsonString(p.CallbackURL))
+	b.WriteString(`,"hashValue":` + jsonString(p.HashValue))
+	b.WriteString(`,"items":[`)
+	for i, item := range p.Items {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		b.WriteString(`{"name":` + jsonString(item.Name) + `,"amount":` + jsonInteger(item.Amount) + `}`)
+	}
+	b.WriteString("]}")
+
+	return b.String()
+}
+
+// MarshalJSON returns JSON(). json.Marshal escapes "<", ">" and "&" in it; encode with a
+// json.Encoder whose SetEscapeHTML is false, or use JSON(), to keep the exact text.
+func (p MiniAppPayment) MarshalJSON() ([]byte, error) { return []byte(p.JSON()), nil }
+
+// jsonInteger writes an amount's whole part as a JSON integer, 0 when it is unset.
+func jsonInteger(amount Amount) string {
+	if whole := amount.WholePart(); whole != "" {
+		return whole
+	}
+	return "0"
+}
+
+// jsonString writes text as a JSON string without HTML escaping; invalid UTF-8 becomes U+FFFD.
+func jsonString(text string) string {
+	var b bytes.Buffer
+	encoder := json.NewEncoder(&b)
+	encoder.SetEscapeHTML(false)
+	_ = encoder.Encode(text) // A string always encodes.
+	return strings.TrimSuffix(b.String(), "\n")
+}

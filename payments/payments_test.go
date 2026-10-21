@@ -1,6 +1,7 @@
 package payments
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"github.com/laranex/go-myanmar-payments/v4/cybersource"
 	"github.com/laranex/go-myanmar-payments/v4/kbzpay"
 	"github.com/laranex/go-myanmar-payments/v4/wavepay"
+	"github.com/laranex/go-myanmar-payments/v4/wavepayminiapp"
 	"github.com/laranex/go-myanmar-payments/v4/yomammqr"
 )
 
@@ -25,6 +27,9 @@ func configured() Config {
 		WavePay: &wavepay.Config{
 			MerchantID: "merchant", SecretKey: "secret", MerchantName: "Shop", BaseURL: wavepay.ProductionURL,
 			BaseRedirectURL: wavepay.ProductionURL, TimeToLiveSeconds: 300, TimeoutSeconds: 30,
+		},
+		WavePayMiniApp: &wavepayminiapp.Config{
+			ClientID: "mini-client", ClientSecret: "secret", MiniAppID: "MINI456", SecretKey: "secret", BaseURL: wavepayminiapp.ProductionURL,
 		},
 		AYAPay: &ayapay.Config{AppKey: "app-key", AppSecret: "secret", BaseURL: ayapay.ProductionURL, TimeoutSeconds: 30},
 		YomaMMQR: &yomammqr.Config{
@@ -50,6 +55,13 @@ func TestGatewaysAreBuiltOnceAndReused(t *testing.T) {
 	if err != nil || wave.Config().MerchantName != "Shop" {
 		t.Fatalf("unexpected Wave Pay %v", err)
 	}
+	miniApp, err := gateways.WavePayMiniApp()
+	if err != nil || miniApp.Config().MiniAppID != "MINI456" {
+		t.Fatalf("unexpected Wave Pay Mini App %v", err)
+	}
+	if again, _ := gateways.WavePayMiniApp(); again != miniApp {
+		t.Fatal("WavePayMiniApp is not reused")
+	}
 	aya, err := gateways.AYAPay()
 	if err != nil || aya.Config().AppKey != "app-key" {
 		t.Fatalf("unexpected AYA %v", err)
@@ -67,11 +79,12 @@ func TestGatewaysAreBuiltOnceAndReused(t *testing.T) {
 func TestAMissingGatewayNamesItsFirstKey(t *testing.T) {
 	gateways := New(Config{}, Options{})
 	cases := map[string]func() error{
-		"kbz_pay/app_id":          func() error { _, err := gateways.KBZPay(); return err },
-		"wave_pay/merchant_id":    func() error { _, err := gateways.WavePay(); return err },
-		"aya_pay/app_key":         func() error { _, err := gateways.AYAPay(); return err },
-		"yoma_mmqr/merchant_id":   func() error { _, err := gateways.YomaMMQR(); return err },
-		"cyber_source/profile_id": func() error { _, err := gateways.CyberSource(); return err },
+		"kbz_pay/app_id":              func() error { _, err := gateways.KBZPay(); return err },
+		"wave_pay/merchant_id":        func() error { _, err := gateways.WavePay(); return err },
+		"wave_pay_mini_app/client_id": func() error { _, err := gateways.WavePayMiniApp(); return err },
+		"aya_pay/app_key":             func() error { _, err := gateways.AYAPay(); return err },
+		"yoma_mmqr/merchant_id":       func() error { _, err := gateways.YomaMMQR(); return err },
+		"cyber_source/profile_id":     func() error { _, err := gateways.CyberSource(); return err },
 	}
 	for want, call := range cases {
 		var configErr *myanmarpayments.ConfigurationError
@@ -125,6 +138,36 @@ func TestYomaUsesTheSharedTokenCache(t *testing.T) {
 	yoma.ForgetToken()
 	if _, ok := cache.Get(key); ok {
 		t.Fatal("the Yoma gateway does not use the shared token cache")
+	}
+}
+
+func TestWavePayMiniAppUsesTheSharedTokenCache(t *testing.T) {
+	cache := myanmarpayments.NewMemoryTokenCache()
+	miniApp, err := New(configured(), Options{TokenCache: cache}).WavePayMiniApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sum := sha256.Sum256([]byte(wavepayminiapp.ProductionURL + "|mini-client"))
+	key := wavepayminiapp.TokenCachePrefix + hex.EncodeToString(sum[:])
+	cache.Set(key, "cached", 0)
+	if token, err := miniApp.AccessToken(context.Background()); err != nil || token != "cached" {
+		t.Fatalf("token %q, %v; want the shared cache's", token, err)
+	}
+	miniApp.ForgetToken()
+	if _, ok := cache.Get(key); ok {
+		t.Fatal("the Wave Pay Mini App gateway does not use the shared token cache")
+	}
+}
+
+func TestFromEnvReadsTheWavePayMiniAppVariables(t *testing.T) {
+	env := map[string]string{
+		"WAVE_PAY_MINI_APP_CLIENT_ID": "c", "WAVE_PAY_MINI_APP_CLIENT_SECRET": "s", "WAVE_PAY_MINI_APP_MINI_APP_ID": "m",
+		"WAVE_PAY_MINI_APP_SECRET_KEY": "k", "WAVE_PAY_MINI_APP_BASE_URL": "https://preprodnewapi.wavemoney.io/",
+	}
+	miniApp, err := FromEnv(func(key string) string { return env[key] }, Options{}).WavePayMiniApp()
+	if err != nil || miniApp.Config().MiniAppID != "m" || miniApp.Config().ResolvedBaseURL() != "https://preprodnewapi.wavemoney.io" {
+		t.Fatalf("unexpected gateway %v", err)
 	}
 }
 

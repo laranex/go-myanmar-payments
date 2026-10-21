@@ -16,17 +16,19 @@ import (
 	"github.com/laranex/go-myanmar-payments/v4/cybersource"
 	"github.com/laranex/go-myanmar-payments/v4/kbzpay"
 	"github.com/laranex/go-myanmar-payments/v4/wavepay"
+	"github.com/laranex/go-myanmar-payments/v4/wavepayminiapp"
 	"github.com/laranex/go-myanmar-payments/v4/yomammqr"
 )
 
 // Config holds the configuration of every gateway; set only the ones you use. A nil entry
 // makes that gateway's method return a *myanmarpayments.ConfigurationError.
 type Config struct {
-	KBZPay      *kbzpay.Config
-	WavePay     *wavepay.Config
-	AYAPay      *ayapay.Config
-	YomaMMQR    *yomammqr.Config
-	CyberSource *cybersource.Config
+	KBZPay         *kbzpay.Config
+	WavePay        *wavepay.Config
+	WavePayMiniApp *wavepayminiapp.Config
+	AYAPay         *ayapay.Config
+	YomaMMQR       *yomammqr.Config
+	CyberSource    *cybersource.Config
 }
 
 // Options are shared by every gateway the facade builds.
@@ -34,7 +36,8 @@ type Options struct {
 	// HTTPClient sends the gateways' requests; nil gives each gateway an *http.Client with
 	// its config's TimeoutSeconds.
 	HTTPClient myanmarpayments.HTTPDoer
-	// TokenCache keeps Yoma MMQR's access token; nil uses one MemoryTokenCache.
+	// TokenCache keeps the Yoma MMQR and Wave Pay Mini App access tokens; nil uses one
+	// MemoryTokenCache.
 	TokenCache myanmarpayments.TokenCache
 }
 
@@ -45,11 +48,12 @@ type Gateways struct {
 	config  func() Config
 	options Options
 
-	kbzPay      *kbzpay.Gateway
-	wavePay     *wavepay.Gateway
-	ayaPay      *ayapay.Gateway
-	yomaMMQR    *yomammqr.Gateway
-	cyberSource *cybersource.Gateway
+	kbzPay         *kbzpay.Gateway
+	wavePay        *wavepay.Gateway
+	wavePayMiniApp *wavepayminiapp.Gateway
+	ayaPay         *ayapay.Gateway
+	yomaMMQR       *yomammqr.Gateway
+	cyberSource    *cybersource.Gateway
 }
 
 // New returns Gateways for config.
@@ -58,16 +62,17 @@ func New(config Config, options Options) *Gateways {
 }
 
 // FromEnv returns Gateways that read every gateway's configuration from environment variables
-// (KBZ_PAY_*, WAVE_PAY_*, AYA_PAY_*, YOMA_MMQR_*, CYBER_SOURCE_* and MYANMAR_PAYMENTS_HTTP_TIMEOUT) through getenv, e.g.
-// os.Getenv, when the gateway is first used.
+// (KBZ_PAY_*, WAVE_PAY_*, WAVE_PAY_MINI_APP_*, AYA_PAY_*, YOMA_MMQR_*, CYBER_SOURCE_* and
+// MYANMAR_PAYMENTS_HTTP_TIMEOUT) through getenv, e.g. os.Getenv, when the gateway is first used.
 func FromEnv(getenv func(string) string, options Options) *Gateways {
 	return newGateways(func() Config {
 		kbz := kbzpay.ConfigFromEnv(getenv)
 		wave := wavepay.ConfigFromEnv(getenv)
+		miniApp := wavepayminiapp.ConfigFromEnv(getenv)
 		aya := ayapay.ConfigFromEnv(getenv)
 		yoma := yomammqr.ConfigFromEnv(getenv)
 		cyber := cybersource.ConfigFromEnv(getenv)
-		return Config{KBZPay: &kbz, WavePay: &wave, AYAPay: &aya, YomaMMQR: &yoma, CyberSource: &cyber}
+		return Config{KBZPay: &kbz, WavePay: &wave, WavePayMiniApp: &miniApp, AYAPay: &aya, YomaMMQR: &yoma, CyberSource: &cyber}
 	}, options)
 }
 
@@ -88,6 +93,15 @@ func (g *Gateways) KBZPay() (*kbzpay.Gateway, error) {
 func (g *Gateways) WavePay() (*wavepay.Gateway, error) {
 	return build(g, &g.wavePay, func(c Config) *wavepay.Config { return c.WavePay }, "wave_pay", "merchant_id",
 		func(c wavepay.Config) (*wavepay.Gateway, error) { return wavepay.New(c, g.options.HTTPClient) })
+}
+
+// WavePayMiniApp returns the Wave Pay Mini App gateway, or a ConfigurationError when it is not
+// configured.
+func (g *Gateways) WavePayMiniApp() (*wavepayminiapp.Gateway, error) {
+	return build(g, &g.wavePayMiniApp, func(c Config) *wavepayminiapp.Config { return c.WavePayMiniApp }, "wave_pay_mini_app", "client_id",
+		func(c wavepayminiapp.Config) (*wavepayminiapp.Gateway, error) {
+			return wavepayminiapp.New(c, g.options.HTTPClient, g.options.TokenCache)
+		})
 }
 
 // AYAPay returns the AYA Payment Gateway, or a ConfigurationError when it is not configured.

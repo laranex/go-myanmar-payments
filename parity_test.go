@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
 	"github.com/laranex/go-myanmar-payments/v4/ayapay"
@@ -18,6 +20,7 @@ import (
 	"github.com/laranex/go-myanmar-payments/v4/internal/validate"
 	"github.com/laranex/go-myanmar-payments/v4/kbzpay"
 	"github.com/laranex/go-myanmar-payments/v4/wavepay"
+	"github.com/laranex/go-myanmar-payments/v4/wavepayminiapp"
 	"github.com/laranex/go-myanmar-payments/v4/yomammqr"
 )
 
@@ -26,6 +29,17 @@ import (
 
 type callbackHandler interface {
 	HandleCallback(*myanmarpayments.CallbackRequest) (*myanmarpayments.PaymentCallback, error)
+}
+
+// miniAppHandler verifies Wave Pay Mini App callbacks with the callback URL of the vector being
+// run, since its HandleCallback also takes the URL the payment was signed with.
+type miniAppHandler struct {
+	gateway     *wavepayminiapp.Gateway
+	callbackURL string
+}
+
+func (h *miniAppHandler) HandleCallback(request *myanmarpayments.CallbackRequest) (*myanmarpayments.PaymentCallback, error) {
+	return h.gateway.HandleCallback(request, h.callbackURL)
 }
 
 // parityGateways builds every gateway from the shared config env, with the shared secrets.
@@ -52,13 +66,20 @@ func parityGateways(t *testing.T, vectors map[string]any) map[string]callbackHan
 	yoma.WebhookHashKey, yoma.WebhookSecret = secret("yoma_mmqr_webhook_hashkey"), secret("yoma_mmqr_webhook_secret")
 	cyber := cybersource.ConfigFromEnv(getenv)
 	cyber.SecretKey = secret("cyber_source_secret_key")
+	miniApp := wavepayminiapp.ConfigFromEnv(getenv)
+	miniApp.SecretKey, miniApp.MiniAppID = secret("wave_pay_mini_app_secret_key"), secret("wave_pay_mini_app_mini_app_id")
+	miniAppGateway, err := wavepayminiapp.New(miniApp, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	return map[string]callbackHandler{
-		"kbz_pay":      must(kbzpay.New(kbz, nil)),
-		"wave_pay":     must(wavepay.New(wave, nil)),
-		"aya_pay":      must(ayapay.New(aya, nil)),
-		"yoma_mmqr":    must(yomammqr.New(yoma, nil, nil)),
-		"cyber_source": must(cybersource.New(cyber)),
+		"kbz_pay":           must(kbzpay.New(kbz, nil)),
+		"wave_pay":          must(wavepay.New(wave, nil)),
+		"wave_pay_mini_app": &miniAppHandler{gateway: miniAppGateway},
+		"aya_pay":           must(ayapay.New(aya, nil)),
+		"yoma_mmqr":         must(yomammqr.New(yoma, nil, nil)),
+		"cyber_source":      must(cybersource.New(cyber)),
 	}
 }
 
@@ -83,6 +104,9 @@ func TestParityCallbacks(t *testing.T) {
 				}
 				request := myanmarpayments.NewCallbackRequest([]byte(vector["body"].(string)), header, nil)
 				expected := vector["expected"].(map[string]any)
+				if handler, ok := gateway.(*miniAppHandler); ok {
+					handler.callbackURL = vector["callback_url"].(string)
+				}
 
 				callback, err := gateway.HandleCallback(request)
 				if expected["valid"] != true {
@@ -106,6 +130,9 @@ func TestParityCallbacks(t *testing.T) {
 					callback.GatewayStatus != text("gateway_status") || callback.GatewayReference != text("gateway_reference") ||
 					callback.Amount != text("amount") {
 					t.Fatalf("unexpected callback %+v, want %v", callback, expected)
+				}
+				if want, ok := expected["merchant_reference_id"]; ok && callback.Raw["merchantRefId"] != want {
+					t.Fatalf("merchantRefId %v, want %v", callback.Raw["merchantRefId"], want)
 				}
 			})
 		}
@@ -178,6 +205,13 @@ func parityConfigGateway(gateway string, vars map[string]string) (map[string]str
 		return map[string]string{"base_url": c.ResolvedBaseURL()}, map[string]int{"timeout_in_seconds": c.TimeoutSeconds}, nil
 	case "yoma_mmqr":
 		g, err := yomammqr.New(yomammqr.ConfigFromEnv(getenv), nil, nil)
+		if err != nil {
+			return nil, nil, err
+		}
+		c := g.Config()
+		return map[string]string{"base_url": c.ResolvedBaseURL()}, map[string]int{"timeout_in_seconds": c.TimeoutSeconds}, nil
+	case "wave_pay_mini_app":
+		g, err := wavepayminiapp.New(wavepayminiapp.ConfigFromEnv(getenv), nil, nil)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -267,7 +301,7 @@ func TestParityDefaultTimeout(t *testing.T) {
 		} else {
 			delete(vars, variable)
 		}
-		for _, gateway := range []string{"kbz_pay", "wave_pay", "aya_pay", "yoma_mmqr"} {
+		for _, gateway := range []string{"kbz_pay", "wave_pay", "wave_pay_mini_app", "aya_pay", "yoma_mmqr"} {
 			_, times, err := parityConfigGateway(gateway, vars)
 			if err != nil {
 				t.Fatalf("%s %s=%v: %v", gateway, variable, value, err)
@@ -916,6 +950,8 @@ func TestParityNegativeAmounts(t *testing.T) {
 			err = kbzpay.PaymentData{OrderID: text("order_id"), Amount: parityAmount(t, data["amount"]), CallbackURL: text("callback_url")}.Validate()
 		case "wave_pay":
 			err = parityWavePayCase(t, data).Validate()
+		case "wave_pay_mini_app":
+			err = parityMiniAppData(t, data).Validate()
 		case "aya_pay":
 			err = ayapay.PaymentData{OrderID: text("order_id"), Amount: parityAmount(t, data["amount"]), Channel: text("channel"), Method: ayapay.Method(text("method"))}.Validate()
 		case "yoma_mmqr":
@@ -1125,5 +1161,239 @@ func TestParityKbzPayResponses(t *testing.T) {
 		if fmt.Sprint(got) != fmt.Sprint(want) {
 			t.Errorf("%s: got %v, want %v", name, got, want)
 		}
+	}
+}
+
+// parityMiniAppData builds Wave Pay Mini App payment data from snake_case vector data: items are
+// [name, amount] pairs where a string amount is parsed, and amount and merchant_reference_id are
+// optional (null is unset).
+func parityMiniAppData(t *testing.T, data map[string]any) *wavepayminiapp.PaymentData {
+	t.Helper()
+	text := func(key string) string {
+		value, _ := data[key].(string)
+		return value
+	}
+	payment := &wavepayminiapp.PaymentData{
+		OrderID: text("order_id"), CallbackURL: text("callback_url"), MerchantReferenceID: text("merchant_reference_id"),
+		Amount: parityAmount(t, data["amount"]),
+	}
+	for _, entry := range data["items"].([]any) {
+		pair := entry.([]any)
+		payment.Items = append(payment.Items, wavepayminiapp.Item{Name: pair[0].(string), Amount: parityAmount(t, pair[1])})
+	}
+	return payment
+}
+
+func parityMiniAppConfig(config map[string]any) wavepayminiapp.Config {
+	return wavepayminiapp.Config{
+		ClientID: config["client_id"].(string), ClientSecret: config["client_secret"].(string), MiniAppID: config["mini_app_id"].(string),
+		SecretKey: config["secret_key"].(string), BaseURL: config["base_url"].(string),
+	}
+}
+
+// ttlCache is a TokenCache that records the TTL of the last value it was given.
+type ttlCache struct {
+	*myanmarpayments.MemoryTokenCache
+	ttl time.Duration
+}
+
+func (c *ttlCache) Set(key, value string, ttl time.Duration) {
+	c.ttl = ttl
+	c.MemoryTokenCache.Set(key, value, ttl)
+}
+
+// requestDoer answers like queueDoer and also records every request.
+type requestDoer struct {
+	queueDoer
+	requests []*http.Request
+}
+
+func (d *requestDoer) Do(request *http.Request) (*http.Response, error) {
+	d.requests = append(d.requests, request)
+	return d.queueDoer.Do(request)
+}
+
+func TestParityWavePayMiniAppToken(t *testing.T) {
+	vector := testutil.Fixture(t, "parity/vectors.json")["wave_pay_mini_app_token"].(map[string]any)
+	config := parityMiniAppConfig(vector["config"].(map[string]any))
+	expected := vector["expected"].(map[string]any)
+	response := vector["response"].(map[string]any)
+	doer := &requestDoer{queueDoer: queueDoer{responses: []queuedResponse{
+		{parityInt(t, response["status"]), response["body"].(string)},
+		{200, `{"access_token":"token-2"}`},
+	}}}
+	cache := &ttlCache{MemoryTokenCache: myanmarpayments.NewMemoryTokenCache()}
+	gateway, err := wavepayminiapp.New(config, doer, cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for range 2 {
+		if token, err := gateway.AccessToken(context.Background()); err != nil || token != expected["token"] {
+			t.Fatalf("token %q, %v; want %v", token, err, expected["token"])
+		}
+	}
+	if len(doer.requests) != 1 {
+		t.Fatalf("%d token requests, want 1", len(doer.requests))
+	}
+	request := doer.requests[0]
+	if request.Method != expected["method"] || request.URL.String() != expected["url"] {
+		t.Errorf("request %s %s", request.Method, request.URL)
+	}
+	for header, want := range expected["headers"].(map[string]any) {
+		if got := request.Header.Get(header); got != want {
+			t.Errorf("header %s = %q, want %q", header, got, want)
+		}
+	}
+	if string(doer.last()) != expected["body"] {
+		t.Errorf("body %q, want %q", doer.last(), expected["body"])
+	}
+	form := map[string]any{}
+	for name, list := range myanmarpayments.NewCallbackRequest(doer.last(), nil, nil).Input() {
+		form[name] = list
+	}
+	if fmt.Sprint(form) != fmt.Sprint(expected["form"]) {
+		t.Errorf("form %v, want %v", form, expected["form"])
+	}
+	key := expected["cache_key"].(string)
+	if cached, ok := cache.Get(key); !ok || cached != expected["token"] || cache.ttl != time.Duration(parityInt(t, expected["ttl"]))*time.Second {
+		t.Errorf("cache %q %v ttl %v, want %v %v", cached, ok, cache.ttl, expected["token"], expected["ttl"])
+	}
+	if key != wavepayminiapp.TokenCachePrefix+strings.TrimPrefix(key, wavepayminiapp.TokenCachePrefix) {
+		t.Errorf("cache key %q has another prefix", key)
+	}
+
+	gateway.ForgetToken()
+	if _, ok := cache.Get(key); ok {
+		t.Fatal("ForgetToken did not delete the shared cache key")
+	}
+	if token, err := gateway.AccessToken(context.Background()); err != nil || token != "token-2" {
+		t.Fatalf("token after ForgetToken %q, %v", token, err)
+	}
+
+	for _, item := range vector["tokens"].([]any) {
+		c := item.(map[string]any)
+		status := http.StatusOK
+		if value, ok := c["status"]; ok {
+			status = parityInt(t, value)
+		}
+		cache := &ttlCache{MemoryTokenCache: myanmarpayments.NewMemoryTokenCache()}
+		gateway, err := wavepayminiapp.New(config, &queueDoer{responses: []queuedResponse{{status, c["body"].(string)}}}, cache)
+		if err != nil {
+			t.Fatal(err)
+		}
+		token, err := gateway.AccessToken(context.Background())
+		if err != nil || token != c["token"] || cache.ttl != time.Duration(parityInt(t, c["ttl"]))*time.Second {
+			t.Errorf("%s: token %q, %v, ttl %v; want %v %v", c["body"], token, err, cache.ttl, c["token"], c["ttl"])
+		}
+	}
+
+	for _, item := range vector["errors"].([]any) {
+		c := item.(map[string]any)
+		status := parityInt(t, c["status"])
+		gateway, err := wavepayminiapp.New(config, &queueDoer{responses: []queuedResponse{{status, c["body"].(string)}}}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = gateway.AccessToken(context.Background())
+		parityAPIError(t, c["body"].(string), err, c)
+		var apiErr *myanmarpayments.APIError
+		if errors.As(err, &apiErr) && apiErr.HTTPStatus != status {
+			t.Errorf("%s: HTTP status %d, want %d", c["body"], apiErr.HTTPStatus, status)
+		}
+	}
+}
+
+// parityPayload decodes text keeping numbers as their exact text, for comparing with a vector.
+func parityPayload(t *testing.T, text string) any {
+	t.Helper()
+	decoder := json.NewDecoder(strings.NewReader(text))
+	decoder.UseNumber()
+	var decoded any
+	if err := decoder.Decode(&decoded); err != nil {
+		t.Fatalf("decode %q: %v", text, err)
+	}
+	return decoded
+}
+
+func TestParityWavePayMiniAppPayment(t *testing.T) {
+	vector := testutil.Fixture(t, "parity/vectors.json")["wave_pay_mini_app_payment"].(map[string]any)
+	config := vector["config"].(map[string]any)
+	gateway, err := wavepayminiapp.New(parityMiniAppConfig(config), &queueDoer{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret := wavepayminiapp.NewSigner(config["secret_key"].(string))
+	hmacOf := func(input string) string { return secret.Hash(input, "", "", "", "") }
+
+	for _, item := range vector["cases"].([]any) {
+		c := item.(map[string]any)
+		name := c["name"].(string)
+		payment, err := gateway.Payment(parityMiniAppData(t, c["data"].(map[string]any)))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if payment.Flow() != myanmarpayments.FlowMiniApp || payment.HashValue != hmacOf(c["hash_input"].(string)) {
+			t.Errorf("%s: hash %q, want HMAC of %q", name, payment.HashValue, c["hash_input"])
+		}
+		if payment.JSON() != c["json"] {
+			t.Errorf("%s: json\n got %s\nwant %s", name, payment.JSON(), c["json"])
+		}
+		if got, want := fmt.Sprint(parityPayload(t, payment.JSON())), fmt.Sprint(c["payload"]); got != want {
+			t.Errorf("%s: payload %s, want %s", name, got, want)
+		}
+		var encoded strings.Builder
+		encoder := json.NewEncoder(&encoded)
+		encoder.SetEscapeHTML(false)
+		if err := encoder.Encode(payment); err != nil || strings.TrimSuffix(encoded.String(), "\n") != c["json"] {
+			t.Errorf("%s: encoded %q, %v", name, encoded.String(), err)
+		}
+	}
+
+	exact := vector["exact_amount"].(map[string]any)
+	payment, err := gateway.Payment(parityMiniAppData(t, exact["data"].(map[string]any)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payment.Amount.String() != exact["amount_json"] || payment.HashValue != exact["hash"] || hmacOf(exact["hash_input"].(string)) != exact["hash"] || payment.JSON() != exact["json"] {
+		t.Errorf("exact amount: %s %s\n%s", payment.Amount, payment.HashValue, payment.JSON())
+	}
+
+	generated := vector["generated_reference"].(map[string]any)
+	pattern := generated["pattern"].(string)
+	for _, value := range generated["values"].([]any) {
+		data := map[string]any{"merchant_reference_id": value}
+		for key, field := range generated["data"].(map[string]any) {
+			data[key] = field
+		}
+		payment, err := gateway.Payment(parityMiniAppData(t, data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if matched, _ := regexp.MatchString(pattern, payment.MerchantReferenceID); !matched {
+			t.Errorf("%v: generated reference %q does not match %s", value, payment.MerchantReferenceID, pattern)
+		}
+	}
+}
+
+func TestParityWavePayMiniAppValidation(t *testing.T) {
+	vector := testutil.Fixture(t, "parity/vectors.json")["wave_pay_mini_app_validation"].(map[string]any)
+	for _, item := range vector["cases"].([]any) {
+		c := item.(map[string]any)
+		data := map[string]any{}
+		for key, value := range vector["data"].(map[string]any) {
+			data[key] = value
+		}
+		for key, value := range c["data"].(map[string]any) {
+			data[key] = value
+		}
+		err := parityMiniAppData(t, data).Validate()
+		if len(c["errors"].(map[string]any)) == 0 {
+			if err != nil {
+				t.Errorf("%s: unexpected error %v", c["name"], err)
+			}
+			continue
+		}
+		parityExpectErrors(t, c["name"].(string), err, c["errors"])
 	}
 }
