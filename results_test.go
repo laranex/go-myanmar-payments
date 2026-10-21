@@ -42,8 +42,15 @@ func TestMiniAppPaymentWritesTheMakePaymentObject(t *testing.T) {
 	if got := (MiniAppPayment{}).JSON(); got != `{"amount":0,"miniAppID":"","merchantRefID":"","orderID":"","callBackUrl":"","hashValue":"","items":[]}` {
 		t.Fatalf("empty payment %s", got)
 	}
-	if got := (MiniAppPayment{Items: []MiniAppItem{{Name: "\xff"}}}).JSON(); !strings.Contains(got, "\"name\":\"\ufffd\"") {
-		t.Fatalf("invalid UTF-8 %s", got)
+	// Invalid UTF-8 becomes U+FFFD; Go versions differ in writing it raw or as \ufffd, so compare decoded.
+	got := (MiniAppPayment{Items: []MiniAppItem{{Name: "\xff"}}}).JSON()
+	var decoded struct {
+		Items []struct {
+			Name string `json:"name"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(got), &decoded); err != nil || len(decoded.Items) != 1 || decoded.Items[0].Name != "\ufffd" {
+		t.Fatalf("invalid UTF-8 %s (%v)", got, err)
 	}
 }
 
