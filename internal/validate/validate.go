@@ -1,4 +1,6 @@
-// Package validate collects validation errors for payment data.
+// Package validate collects validation errors for payment data. Length limits count characters
+// (Unicode code points of the UTF-8 text, utf8.RuneCountInString: a byte that is not valid UTF-8
+// counts as one), so a 255-character Burmese description fits a 255-character limit.
 package validate
 
 import (
@@ -7,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	myanmarpayments "github.com/laranex/go-myanmar-payments/v4"
 	"github.com/laranex/go-myanmar-payments/v4/internal/values"
@@ -34,9 +37,9 @@ func (v *Validator) Required(field, value string) *Validator {
 	return v
 }
 
-// Length fails when a non-empty value is shorter than min or longer than max bytes.
+// Length fails when a non-empty value is shorter than min or longer than max characters.
 func (v *Validator) Length(field, value string, min, max int) *Validator {
-	if value != "" && (len(value) < min || len(value) > max) {
+	if characters := utf8.RuneCountInString(value); value != "" && (characters < min || characters > max) {
 		if min == max {
 			v.fail(field, fmt.Sprintf("The %s field must be %d characters.", field, min))
 		} else {
@@ -46,9 +49,9 @@ func (v *Validator) Length(field, value string, min, max int) *Validator {
 	return v
 }
 
-// Max fails when value is longer than max bytes.
+// Max fails when value is longer than max characters.
 func (v *Validator) Max(field, value string, max int) *Validator {
-	if len(value) > max {
+	if utf8.RuneCountInString(value) > max {
 		v.fail(field, fmt.Sprintf("The %s field must not be greater than %d characters.", field, max))
 	}
 	return v
@@ -80,6 +83,9 @@ type AmountRule struct {
 	MaxLength int
 	// AllowZero accepts an amount of 0.
 	AllowZero bool
+	// UndocumentedDecimals marks whole amounts only because the gateway's documentation shows no
+	// decimal amounts, rather than because it rules decimals out.
+	UndocumentedDecimals bool
 }
 
 // Amount checks an amount against a gateway's documented rules.
@@ -91,6 +97,8 @@ func (v *Validator) Amount(field string, amount myanmarpayments.Amount, rule Amo
 		v.fail(field, fmt.Sprintf("The %s field must not be negative.", field))
 	case !amount.Valid():
 		v.fail(field, fmt.Sprintf("The %s field must be a non-negative number such as 1000 or 1000.50.", field))
+	case rule.MaxDecimals == 0 && amount.DecimalPlaces() > 0 && rule.UndocumentedDecimals:
+		v.fail(field, fmt.Sprintf("%s documents no decimal amounts; the %s field must be a whole number.", rule.Gateway, field))
 	case rule.MaxDecimals == 0 && amount.DecimalPlaces() > 0:
 		v.fail(field, fmt.Sprintf("%s does not accept decimal amounts; the %s field must be a whole number.", rule.Gateway, field))
 	case rule.MaxDecimals > 0 && amount.DecimalPlaces() > rule.MaxDecimals:

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -1395,5 +1396,110 @@ func TestParityWavePayMiniAppValidation(t *testing.T) {
 			continue
 		}
 		parityExpectErrors(t, c["name"].(string), err, c["errors"])
+	}
+}
+
+func TestParityCharacterLimits(t *testing.T) {
+	vector := testutil.Fixture(t, "parity/vectors.json")["character_limits"].(map[string]any)
+	keys := map[string]string{"orderId": "order_id", "description": "description"}
+	for _, item := range vector["cases"].([]any) {
+		c := item.(map[string]any)
+		gateway, field, value := c["gateway"].(string), c["field"].(string), c["value"].(string)
+		data := map[string]any{}
+		for key, v := range vector["data"].(map[string]any)[gateway].(map[string]any) {
+			data[key] = v
+		}
+		key, ok := keys[field]
+		if !ok {
+			t.Fatalf("unknown field %s", field)
+		}
+		data[key] = value
+		text := func(key string) string { return data[key].(string) }
+		var err error
+		switch gateway {
+		case "aya_pay":
+			err = ayapay.PaymentData{OrderID: text("order_id"), Amount: parityAmount(t, data["amount"]), Channel: text("channel"), Method: ayapay.Method(text("method"))}.Validate()
+		case "yoma_mmqr":
+			err = yomammqr.PaymentData{OrderID: text("order_id"), Amount: parityAmount(t, data["amount"]), Description: text("description")}.Validate()
+		case "cyber_source":
+			err = cybersource.PaymentData{
+				OrderID: text("order_id"), Amount: parityAmount(t, data["amount"]), CallbackURL: text("callback_url"), Currency: text("currency"),
+				TransactionType: cybersource.TransactionType(text("transaction_type")), Locale: text("locale"),
+			}.Validate()
+		default:
+			t.Fatalf("unknown gateway %s", gateway)
+		}
+		want := map[string]any{}
+		if message, ok := c["error"].(string); ok {
+			want[field] = message
+		}
+		parityExpectErrors(t, fmt.Sprintf("%s %s %q", gateway, field, value), err, want)
+	}
+}
+
+func TestParityAyaPayTranID(t *testing.T) {
+	vectors := testutil.Fixture(t, "parity/vectors.json")
+	config := ayapay.ConfigFromEnv(parityEnv(vectors, "", nil))
+	config.AppSecret = vectors["secrets"].(map[string]any)["aya_pay_app_secret"].(string)
+	for _, item := range vectors["aya_pay_tran_id"].(map[string]any)["cases"].([]any) {
+		c := item.(map[string]any)
+		signed := map[string]any{"payload": c["payload"], "checkSum": c["check_sum"]}
+		expected := c["expected"].(map[string]any)
+		enquiry, err := json.Marshal(map[string]any{"status": "00", "message": "success", "data": signed})
+		if err != nil {
+			t.Fatal(err)
+		}
+		gateway, err := ayapay.New(config, &queueDoer{responses: []queuedResponse{{http.StatusOK, string(enquiry)}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		type outcome struct{ orderID, status, gatewayStatus, gatewayReference, amount string }
+		paths := map[string]func() (outcome, error){
+			"callback": func() (outcome, error) {
+				request, err := myanmarpayments.NewCallbackRequestFromJSON(signed, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				r, err := gateway.HandleCallback(request)
+				if err != nil {
+					return outcome{}, err
+				}
+				return outcome{r.OrderID, string(r.Status), r.GatewayStatus, r.GatewayReference, r.Amount}, nil
+			},
+			"redirect": func() (outcome, error) {
+				query := url.Values{"payload": {c["payload"].(string)}, "checkSum": {c["check_sum"].(string)}}
+				r, err := gateway.VerifyRedirect(myanmarpayments.NewCallbackRequest(nil, nil, query))
+				if err != nil {
+					return outcome{}, err
+				}
+				return outcome{r.OrderID, string(r.Status), r.GatewayStatus, r.GatewayReference, r.Amount}, nil
+			},
+			"enquiry response": func() (outcome, error) {
+				r, err := gateway.Status(context.Background(), "ORDER_1")
+				if err != nil {
+					return outcome{}, err
+				}
+				return outcome{r.OrderID, string(r.Status), r.GatewayStatus, r.GatewayReference, r.Amount}, nil
+			},
+		}
+		for path, call := range paths {
+			name := fmt.Sprintf("%s (%s)", c["name"], path)
+			got, err := call()
+			if expected["valid"] != true {
+				var sigErr *myanmarpayments.SignatureVerificationError
+				if want := fmt.Sprintf("AYA Pay %s payload is malformed.", path); !errors.As(err, &sigErr) || sigErr.Message != want {
+					t.Errorf("%s: got %v, want %q", name, err, want)
+				}
+				continue
+			}
+			if err != nil {
+				t.Errorf("%s: unexpected error %v", name, err)
+				continue
+			}
+			reference, _ := expected["gateway_reference"].(string)
+			if want := (outcome{"ORDER_1", expected["status"].(string), expected["gateway_status"].(string), reference, "1000"}); got != want {
+				t.Errorf("%s: got %+v, want %+v", name, got, want)
+			}
+		}
 	}
 }

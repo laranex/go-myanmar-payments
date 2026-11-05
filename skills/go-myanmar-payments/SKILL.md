@@ -44,7 +44,7 @@ kbz, err := gateways.KBZPay() // also WavePay(), WavePayMiniApp(), AYAPay(), Yom
 
 ### Amounts
 
-Amounts are `myanmarpayments.Kyat(1000)` or `ParseAmount("1000.50")` (`MustParseAmount` for constants); never a `float64`. Only KBZ Pay (up to 2 decimals) and CyberSource accept decimals; Wave Pay, Wave Pay Mini App, AYA and Yoma take whole kyat. Invalid data returns `*InvalidPaymentDataError` with `Errors` per field, before any request is sent (a negative `Kyat(-1)` gives `The amount field must not be negative.`). Callback, return and cancel URLs must be ASCII `http://` or `https://` URLs with a valid host name (no spaces, `_` or non-ASCII letters; use the `xn--` form). Compare a gateway's amount by value with `amount.Equals(callback.Amount)`.
+Amounts are `myanmarpayments.Kyat(1000)` or `ParseAmount("1000.50")` (`MustParseAmount` for constants); never a `float64`. Only KBZ Pay (up to 2 decimals) and CyberSource accept decimals; Wave Pay, Wave Pay Mini App, AYA and Yoma take whole kyat. Invalid data returns `*InvalidPaymentDataError` with `Errors` per field, before any request is sent (a negative `Kyat(-1)` gives `The amount field must not be negative.`). Length limits count characters, not bytes, so Burmese text gets the full limit. Callback, return and cancel URLs must be ASCII `http://` or `https://` URLs with a valid host name (no spaces, `_` or non-ASCII letters; use the `xn--` form). Compare a gateway's amount by value with `amount.Equals(callback.Amount)`.
 
 ### Start a payment
 
@@ -116,7 +116,7 @@ return callback.Acknowledgement.Write(w)
 
 - Give the package the raw body: `NewCallbackRequestFromHTTP` reads it once and puts it back, so don't call `r.ParseForm()` first. Bodies over `myanmarpayments.MaxCallbackBodyBytes` (64 KiB) return an error wrapping `ErrCallbackBodyTooLarge`.
 - A bad or wrong signature fails with `… signature`/`hash`/`checksum verification failed.`; a correctly signed callback with bad values fails with `Wave Pay callback is malformed.`, `AYA Pay {callback|redirect|enquiry response} payload is malformed.` or `CyberSource callback is malformed.`. Both are `*SignatureVerificationError`.
-- Check AYA's browser return with `aya.VerifyRedirect(request)`.
+- Check AYA's browser return with `aya.VerifyRedirect(request)`. AYA sends `tranId` only for a successful payment, so `callback.GatewayReference` may be empty for a failed or pending one.
 - Wave Pay Mini App callbacks carry neither the mini app id nor the callback URL, so pass the callback URL the payment was signed with: `miniApp.HandleCallback(request, "https://shop.test/payments/wave-pay-mini-app/callback")`. `successful` is `StatusSuccessful`, `processing` is `StatusPending`, `failed` is `StatusFailed`; `merchantRefId` is in `callback.Raw`. Wave expects an empty 200. A correctly hashed callback with bad values fails with `Wave Pay Mini App callback is malformed.`.
 - Yoma MMQR callbacks need the `X-Webhook-Secret` header (`YOMA_MMQR_WEBHOOK_SECRET`) and carry no amount: confirm with `yoma.Status(ctx, reference)` and trust your stored amount.
 - For production, store the verified callback, acknowledge immediately, then process it once in the background.

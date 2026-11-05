@@ -187,7 +187,8 @@ func (g *Gateway) Status(ctx context.Context, orderID string) (*myanmarpayments.
 	return result, nil
 }
 
-// HandleCallback verifies AYA's backend callback.
+// HandleCallback verifies AYA's backend callback. AYA sends tranId only for a successful payment
+// (statusCode "00"), so GatewayReference is empty for a failed, rejected or pending one.
 func (g *Gateway) HandleCallback(request *myanmarpayments.CallbackRequest) (*myanmarpayments.PaymentCallback, error) {
 	payload, err := g.verifiedPayload(request.Input(), "callback")
 	if err != nil {
@@ -272,9 +273,10 @@ func (g *Gateway) verifiedPayload(input map[string]any, context string) (map[str
 	// The checksum joins the values with ":" and skips absent fields, so a value holding ":"
 	// could be re-split into other fields (e.g. the "00" seconds of dateTime read as statusCode).
 	// Only dateTime may hold ":", and only in AYA's fixed "YYYY-MM-DD hh:mm:ss" format. A result
-	// is only trusted when it names the order, the transaction, an exact MMK amount and a
-	// two-digit status.
-	malformed := signed["merchOrderId"] == "" || signed["tranId"] == "" || signed["currencyCode"] != currencyMMK ||
+	// is only trusted when it names the order, an exact MMK amount and a two-digit status, and,
+	// for a successful payment (statusCode "00"), the transaction; a failed, rejected or pending
+	// payload may leave tranId out (GatewayReference is then empty).
+	malformed := signed["merchOrderId"] == "" || (signed["statusCode"] == "00" && signed["tranId"] == "") || signed["currencyCode"] != currencyMMK ||
 		!amountPattern.MatchString(signed["amount"]) || !statusCodePattern.MatchString(signed["statusCode"])
 	for field, value := range signed {
 		if field == "dateTime" {

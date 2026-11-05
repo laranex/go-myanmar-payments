@@ -181,6 +181,9 @@ func (g *Gateway) Initiate(ctx context.Context, data *PaymentData) (*myanmarpaym
 }
 
 // HandleCallback verifies Wave's callback. Only PAYMENT_CONFIRMED means the customer paid.
+// The hash takes the time to live from timeToLiveSeconds when that key is present (even when
+// null) and from timeToLiveInSeconds otherwise, since the spec's example and its field table
+// disagree on the name.
 // OrderID falls back to merchantReferenceId when orderId is missing, null or empty, as a
 // safeguard: earlier Wave documents marked orderId optional.
 //
@@ -197,6 +200,7 @@ func (g *Gateway) HandleCallback(request *myanmarpayments.CallbackRequest) (*mya
 	parts := make([]string, len(callbackFields))
 	nested := false
 	for i, field := range callbackFields {
+		field = callbackKey(field, payload)
 		nested = nested || values.IsNested(payload[field])
 		value, ok := values.String(payload[field])
 		if !ok {
@@ -229,6 +233,17 @@ func (g *Gateway) HandleCallback(request *myanmarpayments.CallbackRequest) (*mya
 		Raw:              payload,
 		Acknowledgement:  myanmarpayments.DefaultAcknowledgement(),
 	}, nil
+}
+
+// callbackKey is the key a callback field is read from. The spec's callback example spells the
+// time to live timeToLiveSeconds while its field table and hash formula say timeToLiveInSeconds,
+// so timeToLiveSeconds is read when the key is present (even when null) and timeToLiveInSeconds
+// otherwise: one value either way.
+func callbackKey(field string, payload map[string]any) string {
+	if _, ok := payload[field]; field == "timeToLiveSeconds" && !ok {
+		return "timeToLiveInSeconds"
+	}
+	return field
 }
 
 func (g *Gateway) hash(parts []string) string {

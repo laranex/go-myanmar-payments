@@ -49,7 +49,7 @@ func (d PaymentData) Validate() error {
 	v := validate.New().
 		Required("orderId", d.OrderID).
 		Length("orderId", d.OrderID, 6, 40).
-		Amount("amount", d.Amount, validate.AmountRule{Gateway: "AYA Payment Gateway"}).
+		Amount("amount", d.Amount, validate.AmountRule{Gateway: "AYA Payment Gateway", UndocumentedDecimals: true}).
 		Required("channel", d.Channel).
 		When(!d.Method.valid(), "method", "The method field must be one of WEB, QR or NOTI.").
 		URL("returnUrl", d.ReturnURL).

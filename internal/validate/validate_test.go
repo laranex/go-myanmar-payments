@@ -125,6 +125,7 @@ func TestAmountFollowsTheGatewayRule(t *testing.T) {
 		{"unset", myanmarpayments.Amount{}, whole, "The amount field is required."},
 		{"negative", myanmarpayments.Kyat(-1), whole, "The amount field must not be negative."},
 		{"decimal where whole required", myanmarpayments.MustParseAmount("10.5"), whole, "Wave Pay does not accept decimal amounts; the amount field must be a whole number."},
+		{"decimal the gateway documents none of", myanmarpayments.MustParseAmount("10.5"), AmountRule{Gateway: "AYA Payment Gateway", UndocumentedDecimals: true}, "AYA Payment Gateway documents no decimal amounts; the amount field must be a whole number."},
 		{"too many decimals", myanmarpayments.MustParseAmount("10.555"), twoPlaces, "KBZ Pay accepts at most 2 decimal places; the amount field has 3."},
 		{"zero", myanmarpayments.Kyat(0), twoPlaces, "The amount field must be greater than 0."},
 		{"too long", myanmarpayments.MustParseAmount("1234567890.123456"), cybersource, "The amount field must not be greater than 15 characters."},
@@ -147,6 +148,17 @@ func TestAmountFollowsTheGatewayRule(t *testing.T) {
 				t.Fatalf("amount = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestLengthLimitsCountCharacters(t *testing.T) {
+	burmese := "ကခဂ" // 3 characters, 9 bytes
+	if err := New().Max("note", burmese, 3).Length("code", burmese, 3, 3).Err(); err != nil {
+		t.Fatalf("Err = %v, want nil", err)
+	}
+	errs := failures(t, New().Max("note", burmese+"\xff", 3).Length("code", "\xff\xfe", 3, 5).Err())
+	if errs["note"] != "The note field must not be greater than 3 characters." || errs["code"] != "The code field must be between 3 and 5 characters." {
+		t.Fatalf("errors = %v", errs)
 	}
 }
 

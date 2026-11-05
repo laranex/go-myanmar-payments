@@ -50,8 +50,9 @@ func (s Signer) Sign(fields map[string]any) string {
 	return strings.ToUpper(hex.EncodeToString(sum[:]))
 }
 
-// Verify checks fields["sign"] in constant time. Nested values are never signed, so fields
-// holding an object or array fail verification rather than being partly trusted.
+// Verify checks fields["sign"] in constant time, case-insensitively and with ASCII whitespace and
+// NUL around it trimmed (KBZ's own examples show padded values). Nested values are never signed,
+// so fields holding an object or array fail verification rather than being partly trusted.
 func (s Signer) Verify(fields map[string]any) bool {
 	for _, value := range fields {
 		if values.IsNested(value) {
@@ -62,7 +63,7 @@ func (s Signer) Verify(fields map[string]any) bool {
 	if !ok {
 		return false
 	}
-	return subtle.ConstantTimeCompare([]byte(s.Sign(fields)), []byte(strings.ToUpper(sign))) == 1
+	return subtle.ConstantTimeCompare([]byte(s.Sign(fields)), []byte(strings.ToUpper(values.TrimASCII(sign)))) == 1
 }
 
 func stringFields(fields map[string]string) map[string]any {

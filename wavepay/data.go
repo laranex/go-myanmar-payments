@@ -90,8 +90,8 @@ func (d PaymentData) ResolvedAmount() myanmarpayments.Amount {
 // merchantReferenceId, merchantName, timeToLiveSeconds, additionalField3 to additionalField5,
 // then each item's name and amount, then amount. Without Amount, the total is the exact sum of
 // the items: no items gives "The amount field is required.", and an item amount that is
-// invalid or has decimals skips the total check (the item's own error is reported). Lengths are
-// counted in bytes of UTF-8.
+// invalid or has decimals skips the total check (the item's own error is reported). Lengths count
+// characters (Unicode code points), not bytes.
 func (d PaymentData) Validate() error {
 	v := validate.New().
 		Required("orderId", d.OrderID).
