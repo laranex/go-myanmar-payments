@@ -2,6 +2,9 @@ package myanmarpayments_test
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1434,6 +1437,93 @@ func TestParityCharacterLimits(t *testing.T) {
 			want[field] = message
 		}
 		parityExpectErrors(t, fmt.Sprintf("%s %s %q", gateway, field, value), err, want)
+	}
+}
+
+// parityCyberSourceData builds CyberSource payment data from a vector's snake_case fields; a
+// missing or null URL is unset.
+func parityCyberSourceData(t *testing.T, data map[string]any) cybersource.PaymentData {
+	t.Helper()
+	text := func(key string) string { value, _ := data[key].(string); return value }
+	return cybersource.PaymentData{
+		OrderID: text("order_id"), Amount: parityAmount(t, data["amount"]), CallbackURL: text("callback_url"),
+		Currency: text("currency"), TransactionType: cybersource.TransactionType(text("transaction_type")), Locale: text("locale"),
+		ReturnURL: text("return_url"), CancelURL: text("cancel_url"),
+	}
+}
+
+func TestParityCyberSourceHostedCheckout(t *testing.T) {
+	vector := testutil.Fixture(t, "parity/vectors.json")["cyber_source_hosted_checkout"].(map[string]any)
+	config := vector["config"].(map[string]any)
+	gateway, err := cybersource.New(cybersource.Config{
+		ProfileID: config["profile_id"].(string), AccessKey: config["access_key"].(string),
+		SecretKey: config["secret_key"].(string), BaseURL: config["base_url"].(string),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := vector["data"].(map[string]any)
+	merge := func(overrides map[string]any) map[string]any {
+		data := map[string]any{}
+		for key, value := range base {
+			data[key] = value
+		}
+		for key, value := range overrides {
+			data[key] = value
+		}
+		return data
+	}
+	patterns := vector["patterns"].(map[string]any)
+
+	for _, item := range vector["cases"].([]any) {
+		c := item.(map[string]any)
+		name := c["name"].(string)
+		payment, err := gateway.HostedCheckout(parityCyberSourceData(t, merge(c["data"].(map[string]any))))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		fields := payment.Values()
+		if payment.Action != vector["action"] || payment.OrderID != base["order_id"] || fields["signed_field_names"] != c["signed_field_names"] {
+			t.Errorf("%s: action %q, order id %q, signed_field_names %q", name, payment.Action, payment.OrderID, fields["signed_field_names"])
+		}
+		expected := c["fields"].([]any)
+		if len(payment.Fields) != len(expected) {
+			t.Fatalf("%s: %d fields, want %d", name, len(payment.Fields), len(expected))
+		}
+		for i, pair := range expected {
+			field := pair.([]any)
+			if payment.Fields[i].Name != field[0] {
+				t.Errorf("%s: field %d is %s, want %s", name, i, payment.Fields[i].Name, field[0])
+			}
+			if value, ok := field[1].(string); ok && payment.Fields[i].Value != value {
+				t.Errorf("%s: %s is %q, want %q", name, field[0], payment.Fields[i].Value, value)
+			}
+		}
+		for _, key := range []string{"transaction_uuid", "signed_date_time"} {
+			if !regexp.MustCompile(patterns[key].(string)).MatchString(fields[key]) {
+				t.Errorf("%s: %s %q does not match %s", name, key, fields[key], patterns[key])
+			}
+		}
+		names := strings.Split(c["signed_field_names"].(string), ",")
+		pairs := make([]string, len(names))
+		for i, n := range names {
+			pairs[i] = n + "=" + fields[n]
+		}
+		mac := hmac.New(sha256.New, []byte(config["secret_key"].(string)))
+		mac.Write([]byte(strings.Join(pairs, ",")))
+		if want := base64.StdEncoding.EncodeToString(mac.Sum(nil)); fields["signature"] != want {
+			t.Errorf("%s: signature %q, want %q", name, fields["signature"], want)
+		}
+	}
+
+	for _, item := range vector["order_id_limits"].([]any) {
+		c := item.(map[string]any)
+		want := map[string]any{}
+		if message, ok := c["error"].(string); ok {
+			want["orderId"] = message
+		}
+		err := parityCyberSourceData(t, merge(map[string]any{"order_id": c["value"]})).Validate()
+		parityExpectErrors(t, fmt.Sprintf("order id %q", c["value"]), err, want)
 	}
 }
 

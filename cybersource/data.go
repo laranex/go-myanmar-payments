@@ -26,18 +26,18 @@ var (
 	localePattern   = regexp.MustCompile(`^[a-z]{2}-[a-z]{2}$`)
 )
 
-// PaymentData is a Secure Acceptance card payment. CyberSource is multi-currency.
+// PaymentData is a Secure Acceptance Hosted Checkout card payment. CyberSource is multi-currency.
 type PaymentData struct {
-	// OrderID is your order id (reference_number), at most 50 characters. Echoed back as req_reference_number.
+	// OrderID is your order id (reference_number), at most 40 characters (the Asia, Middle East, and Africa Gateway's limit). Echoed back as req_reference_number.
 	OrderID string
 	// Amount is the order total in Currency, 0 or more and at most 15 characters including the
 	// decimal point, e.g. myanmarpayments.MustParseAmount("10.50").
 	Amount myanmarpayments.Amount
 	// CallbackURL is the URL CyberSource posts the result to (override_backoffice_post_url), at most 255 characters.
 	CallbackURL string
-	// ReturnURL is the receipt page (override_custom_receipt_page), at most 255 characters (optional).
+	// ReturnURL is the receipt page (override_custom_receipt_page), at most 255 characters. Left out when empty (optional).
 	ReturnURL string
-	// CancelURL is the page shown on cancel (override_custom_cancel_page), at most 255 characters (optional).
+	// CancelURL is the page shown on cancel (override_custom_cancel_page), at most 255 characters. Left out when empty (optional).
 	CancelURL string
 	// Currency is an ISO 4217 code, e.g. MMK (required).
 	Currency string
@@ -52,7 +52,7 @@ func (d PaymentData) Validate() error {
 	t := d.TransactionType
 	return validate.New().
 		Required("orderId", d.OrderID).
-		Max("orderId", d.OrderID, 50).
+		Max("orderId", d.OrderID, 40).
 		Amount("amount", d.Amount, validate.AmountRule{Gateway: "CyberSource", MaxDecimals: -1, MaxLength: 15, AllowZero: true}).
 		Required("callbackUrl", d.CallbackURL).
 		URL("callbackUrl", d.CallbackURL).Max("callbackUrl", d.CallbackURL, 255).

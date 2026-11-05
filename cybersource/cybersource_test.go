@@ -56,8 +56,8 @@ func callback(overrides map[string]string) *myanmarpayments.CallbackRequest {
 	return myanmarpayments.NewCallbackRequest([]byte(form.Encode()), nil, nil)
 }
 
-func TestInitiateSignsTheHostedCheckoutFields(t *testing.T) {
-	payment, err := newGateway(t).Initiate(PaymentData{OrderID: "ORDER-1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cs/callback", ReturnURL: "https://shop.test/done", Currency: "MMK", TransactionType: Authorization, Locale: "en-us"})
+func TestHostedCheckoutSignsTheFields(t *testing.T) {
+	payment, err := newGateway(t).HostedCheckout(PaymentData{OrderID: "ORDER-1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cs/callback", ReturnURL: "https://shop.test/done", Currency: "MMK", TransactionType: Authorization, Locale: "en-us"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,8 +74,56 @@ func TestInitiateSignsTheHostedCheckoutFields(t *testing.T) {
 	}
 }
 
+func TestUnsetReturnAndCancelURLsAreLeftOut(t *testing.T) {
+	optional := []string{"override_custom_receipt_page", "override_custom_cancel_page"}
+	cases := map[string]struct {
+		returnURL, cancelURL string
+		want                 []string
+	}{
+		"both unset":      {"", "", nil},
+		"return URL only": {"https://shop.test/done", "", []string{"override_custom_receipt_page"}},
+		"cancel URL only": {"", "https://shop.test/cancel", []string{"override_custom_cancel_page"}},
+		"both set":        {"https://shop.test/done", "https://shop.test/cancel", optional},
+	}
+	for name, c := range cases {
+		payment, err := newGateway(t).HostedCheckout(PaymentData{OrderID: "ORDER-1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb", ReturnURL: c.returnURL, CancelURL: c.cancelURL, Currency: "MMK", TransactionType: Sale, Locale: "en-us"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		fields := payment.Values()
+		var sent, signed []string
+		for _, field := range payment.Fields {
+			for _, o := range optional {
+				if field.Name == o {
+					sent = append(sent, o)
+				}
+			}
+		}
+		for _, n := range strings.Split(fields["signed_field_names"], ",") {
+			for _, o := range optional {
+				if n == o {
+					signed = append(signed, o)
+				}
+			}
+		}
+		if strings.Join(sent, ",") != strings.Join(c.want, ",") || strings.Join(signed, ",") != strings.Join(c.want, ",") {
+			t.Errorf("%s: sent %v, signed %v, want %v", name, sent, signed, c.want)
+		}
+		if fields["override_backoffice_post_url"] != "https://shop.test/cb" || fields["signature"] != signature(fields) {
+			t.Errorf("%s: unexpected fields %v", name, fields)
+		}
+	}
+}
+
+func TestOrderIDOfFortyCharactersIsAccepted(t *testing.T) {
+	data := PaymentData{OrderID: strings.Repeat("A", 40), Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb", Currency: "MMK", TransactionType: Sale, Locale: "en-us"}
+	if err := data.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestDecimalAmountsAndOtherCurrencies(t *testing.T) {
-	payment, err := newGateway(t).Initiate(PaymentData{OrderID: "ORDER-2", Amount: myanmarpayments.MustParseAmount("10.50"), CallbackURL: "https://shop.test/cb", Currency: "USD", TransactionType: Sale, Locale: "en-us"})
+	payment, err := newGateway(t).HostedCheckout(PaymentData{OrderID: "ORDER-2", Amount: myanmarpayments.MustParseAmount("10.50"), CallbackURL: "https://shop.test/cb", Currency: "USD", TransactionType: Sale, Locale: "en-us"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +189,7 @@ func TestValidationFollowsTheSecureAcceptanceFieldRules(t *testing.T) {
 		"negative amount":      {func(d *PaymentData) { d.Amount = myanmarpayments.Kyat(-1) }, "amount"},
 		"missing amount":       {func(d *PaymentData) { d.Amount = myanmarpayments.Amount{} }, "amount"},
 		"plain en locale":      {func(d *PaymentData) { d.Locale = "en" }, "locale"},
-		"order id over 50":     {func(d *PaymentData) { d.OrderID = strings.Repeat("A", 51) }, "orderId"},
+		"order id over 40":     {func(d *PaymentData) { d.OrderID = strings.Repeat("A", 41) }, "orderId"},
 		"unknown type":         {func(d *PaymentData) { d.TransactionType = "refund" }, "transactionType"},
 		"missing currency":     {func(d *PaymentData) { d.Currency = "" }, "currency"},
 		"missing type":         {func(d *PaymentData) { d.TransactionType = "" }, "transactionType"},
@@ -169,7 +217,7 @@ func TestCyberSourceAcceptsZeroAndAnyDecimalPlaces(t *testing.T) {
 }
 
 func TestReplayedRequestFormWithUnsignedResultFieldsIsRejected(t *testing.T) {
-	payment, err := newGateway(t).Initiate(PaymentData{OrderID: "ORDER-1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb", Currency: "MMK", TransactionType: Sale, Locale: "en-us"})
+	payment, err := newGateway(t).HostedCheckout(PaymentData{OrderID: "ORDER-1", Amount: myanmarpayments.Kyat(1000), CallbackURL: "https://shop.test/cb", Currency: "MMK", TransactionType: Sale, Locale: "en-us"})
 	if err != nil {
 		t.Fatal(err)
 	}

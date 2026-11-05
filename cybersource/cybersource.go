@@ -1,4 +1,4 @@
-// Package cybersource integrates CyberSource Secure Acceptance hosted checkout for card payments.
+// Package cybersource integrates CyberSource Secure Acceptance Hosted Checkout for card payments.
 package cybersource
 
 import (
@@ -19,6 +19,9 @@ var signedFields = []string{
 	"transaction_type", "reference_number", "amount", "currency",
 	"override_custom_receipt_page", "override_backoffice_post_url", "override_custom_cancel_page",
 }
+
+// optionalFields are the override URLs left out of the fields and signed_field_names when unset.
+var optionalFields = map[string]bool{"override_custom_receipt_page": true, "override_custom_cancel_page": true}
 
 var statuses = map[string]myanmarpayments.PaymentStatus{
 	"ACCEPT":  myanmarpayments.StatusSuccessful,
@@ -46,9 +49,14 @@ func New(config Config) (*Gateway, error) {
 // Config returns the configuration in use.
 func (g *Gateway) Config() Config { return g.config }
 
-// Initiate signs the payment fields. The customer's browser must POST the returned form to
-// CyberSource; FormPayment.HTML renders a page that does it.
-func (g *Gateway) Initiate(data PaymentData) (*myanmarpayments.FormPayment, error) {
+// HostedCheckout starts a Secure Acceptance Hosted Checkout payment: it signs the payment fields.
+// No network call is made; the customer's browser must POST the returned form to CyberSource's
+// /pay page, and FormPayment.HTML renders a page that does it.
+//
+// override_custom_receipt_page (ReturnURL) and override_custom_cancel_page (CancelURL) are sent
+// and signed only when set (not empty); unset ones are left out, so the Secure Acceptance
+// profile's own pages apply. override_backoffice_post_url (CallbackURL) is always sent.
+func (g *Gateway) HostedCheckout(data PaymentData) (*myanmarpayments.FormPayment, error) {
 	if err := data.Validate(); err != nil {
 		return nil, err
 	}
@@ -57,7 +65,7 @@ func (g *Gateway) Initiate(data PaymentData) (*myanmarpayments.FormPayment, erro
 		"access_key":                   g.config.AccessKey,
 		"profile_id":                   g.config.ProfileID,
 		"transaction_uuid":             g.uuid(),
-		"signed_field_names":           strings.Join(signedFields, ","),
+		"signed_field_names":           "",
 		"signed_date_time":             g.now().UTC().Format("2006-01-02T15:04:05Z"),
 		"locale":                       data.Locale,
 		"transaction_type":             string(data.TransactionType),
@@ -69,9 +77,17 @@ func (g *Gateway) Initiate(data PaymentData) (*myanmarpayments.FormPayment, erro
 		"override_custom_cancel_page":  data.CancelURL,
 	}
 
-	fields := make([]myanmarpayments.FormField, 0, len(signedFields)+1)
-	signable := make(map[string]any, len(fieldValues))
+	names := make([]string, 0, len(signedFields))
 	for _, name := range signedFields {
+		if fieldValues[name] != "" || !optionalFields[name] {
+			names = append(names, name)
+		}
+	}
+	fieldValues["signed_field_names"] = strings.Join(names, ",")
+
+	fields := make([]myanmarpayments.FormField, 0, len(names)+1)
+	signable := make(map[string]any, len(names))
+	for _, name := range names {
 		fields = append(fields, myanmarpayments.FormField{Name: name, Value: fieldValues[name]})
 		signable[name] = fieldValues[name]
 	}
