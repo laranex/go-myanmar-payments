@@ -162,7 +162,7 @@ func TestWavePayMiniAppUsesTheSharedTokenCache(t *testing.T) {
 
 func TestFromEnvReadsTheWavePayMiniAppVariables(t *testing.T) {
 	env := map[string]string{
-		"WAVE_PAY_MINI_APP_CLIENT_ID": "c", "WAVE_PAY_MINI_APP_CLIENT_SECRET": "s", "WAVE_PAY_MINI_APP_MINI_APP_ID": "m",
+		"WAVE_PAY_MINI_APP_CLIENT_ID": "c", "WAVE_PAY_MINI_APP_CLIENT_SECRET": "s", "WAVE_PAY_MINI_APP_APP_ID": "m",
 		"WAVE_PAY_MINI_APP_SECRET_KEY": "k", "WAVE_PAY_MINI_APP_BASE_URL": "https://preprodnewapi.wavemoney.io/",
 	}
 	miniApp, err := FromEnv(func(key string) string { return env[key] }, Options{}).WavePayMiniApp()

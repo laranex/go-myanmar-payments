@@ -31,13 +31,13 @@ type Config struct {
 }
 
 // ConfigFromEnv reads WAVE_PAY_MINI_APP_CLIENT_ID, WAVE_PAY_MINI_APP_CLIENT_SECRET,
-// WAVE_PAY_MINI_APP_MINI_APP_ID, WAVE_PAY_MINI_APP_SECRET_KEY, WAVE_PAY_MINI_APP_BASE_URL and
+// WAVE_PAY_MINI_APP_APP_ID, WAVE_PAY_MINI_APP_SECRET_KEY, WAVE_PAY_MINI_APP_BASE_URL and
 // MYANMAR_PAYMENTS_HTTP_TIMEOUT.
 func ConfigFromEnv(getenv func(string) string) Config {
 	return Config{
 		ClientID:       env.First(getenv, "WAVE_PAY_MINI_APP_CLIENT_ID"),
 		ClientSecret:   env.First(getenv, "WAVE_PAY_MINI_APP_CLIENT_SECRET"),
-		MiniAppID:      env.First(getenv, "WAVE_PAY_MINI_APP_MINI_APP_ID"),
+		MiniAppID:      env.First(getenv, "WAVE_PAY_MINI_APP_APP_ID"),
 		SecretKey:      env.First(getenv, "WAVE_PAY_MINI_APP_SECRET_KEY"),
 		TimeoutSeconds: env.Timeout(getenv),
 		BaseURL:        env.First(getenv, "WAVE_PAY_MINI_APP_BASE_URL"),
